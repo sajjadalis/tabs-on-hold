@@ -455,13 +455,13 @@ export function Manager() {
           </button>
         </nav>
         <div className="sidebar-tip">
-          <div className="tip-icon">
-            <Sparkles size={18} />
+          <div className="tip-heading">
+            <Sparkles className="tip-icon" size={16} aria-hidden="true" />
+            <strong>
+              A clearer browser.
+              <br />A clearer head.
+            </strong>
           </div>
-          <strong>
-            A clearer browser.
-            <br />A clearer head.
-          </strong>
           <p>
             Save what matters.
             <br />

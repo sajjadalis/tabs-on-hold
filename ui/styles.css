@@ -26,18 +26,18 @@
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --page: #09090b;
-  --surface: #18181b;
-  --sidebar: #111113;
-  --subtle: #202023;
-  --text: #f4f4f5;
-  --muted: #a1a1aa;
-  --line: #3f3f46;
-  --green: #d4d4d8;
-  --green-deep: #e4e4e7;
-  --green-soft: #27272a;
-  --danger: #fca5a5;
-  --shadow: 0 8px 30px #0005;
+  --page: #252b2a;
+  --surface: #303836;
+  --sidebar: #29312f;
+  --subtle: #36403c;
+  --text: #edf2ec;
+  --muted: #b0bdb6;
+  --line: #4b5851;
+  --green: #abc797;
+  --green-deep: #c1d8ae;
+  --green-soft: #3c503b;
+  --danger: #f0aaa0;
+  --shadow: 0 8px 30px #10181530;
   color: var(--text);
   background: var(--page);
 }
@@ -264,22 +264,30 @@ nav button.active span {
 }
 .sidebar-tip {
   position: relative;
+  flex-shrink: 0;
   overflow: hidden;
-  margin: 36px 7px 22px;
-  padding: 20px 16px 23px;
+  margin: 20px 7px 16px;
+  padding: 16px 12px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
 }
+.tip-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
 .tip-icon {
   color: var(--green);
-  margin-bottom: 13px;
+  flex-shrink: 0;
+  margin-top: 3px;
 }
 .sidebar-tip strong {
   font-weight: 550;
   font-size: 14px;
   line-height: 1.6;
   letter-spacing: -0.25px;
+  white-space: nowrap;
 }
 .sidebar-tip p {
   color: var(--muted);
@@ -1968,51 +1976,58 @@ kbd {
   bottom: 76px;
 }
 :root[data-theme='dark'] .brand-mark {
-  background: #3f3f46;
-  color: #fafafa;
+  background: #486b3d;
+  color: #f6f9f0;
   box-shadow: none;
 }
 :root[data-theme='dark'] .primary-button {
-  background: #e4e4e7;
-  color: #18181b;
+  background: var(--green);
+  color: #253021;
   box-shadow: none;
 }
 :root[data-theme='dark'] .primary-button:hover:not(:disabled) {
-  background: #fafafa;
+  background: var(--green-deep);
 }
 :root[data-theme='dark'] .secondary-button:hover:not(:disabled),
 :root[data-theme='dark'] .tab-card:hover {
-  border-color: #71717a;
+  border-color: #8a9e8e;
 }
 :root[data-theme='dark'] .search-field {
-  color: #a1a1aa;
+  color: var(--muted);
 }
 :root[data-theme='dark'] .search-field:focus-within {
-  border-color: #71717a;
-  box-shadow: 0 0 0 2px #ffffff0c;
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px #abc79720;
 }
 :root[data-theme='dark'] input::placeholder {
-  color: #71717a;
+  color: #a8b6ad;
 }
 :root[data-theme='dark'] .heading-dot,
 :root[data-theme='dark'] .session-folder,
 :root[data-theme='dark'] .eyebrow,
 :root[data-theme='dark'] .empty-illustration > span {
-  color: #a1a1aa;
+  color: var(--green);
 }
 :root[data-theme='dark'] .workspace-dot,
 :root[data-theme='dark'] .live-dot,
 :root[data-theme='dark'] .storage-line span,
 :root[data-theme='dark'] .switch-input:checked + .switch-track,
 :root[data-theme='dark'] .operation progress::-webkit-progress-value {
-  background: #71717a;
+  background: #789968;
 }
 :root[data-theme='dark'] .preview-actions,
 :root[data-theme='dark'] .preview-enlarge {
-  background: #27272af2;
+  background: #35483bf2;
 }
 :root[data-theme='dark'] .dialog::backdrop {
-  background: #0009;
+  background: #17201c99;
+}
+:root[data-theme='dark'] .site-icon {
+  background: var(--green-soft) !important;
+  color: var(--green-deep) !important;
+}
+:root[data-theme='dark'] .tab-state.still-open {
+  color: #dbc391;
 }
 
 @media (min-width: 1500px) {
@@ -2051,6 +2066,54 @@ kbd {
   }
   .brand strong {
     font-size: 20px;
+  }
+}
+@media (min-width: 761px) and (max-height: 799px) {
+  .sidebar {
+    padding-top: 20px;
+    padding-bottom: 16px;
+  }
+  .workspace-label {
+    margin-top: 20px;
+    margin-bottom: 18px;
+  }
+  .nav-label {
+    margin-bottom: 8px;
+  }
+  .sidebar nav button {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .sidebar-tip {
+    margin: 16px 0 12px;
+    padding: 14px 12px;
+  }
+  .sidebar-tip p {
+    line-height: 1.6;
+  }
+  .storage-card {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  .sidebar-version {
+    margin-top: 12px;
+  }
+}
+@media (min-width: 761px) and (max-height: 740px) {
+  .workspace-label,
+  .nav-label {
+    display: none;
+  }
+  .sidebar nav {
+    margin-top: 20px;
+  }
+  .sidebar-tip {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .sidebar-action {
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 }
 @media (max-width: 760px) {

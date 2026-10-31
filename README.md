@@ -21,7 +21,7 @@ The manager uses a compact title/search row, an inline remove-after-restore togg
 
 Session and tab **⋯** menus close when clicking outside, moving keyboard focus outside, pressing **Escape**, or selecting an action. Escape returns focus to the menu trigger.
 
-Dark mode uses neutral zinc backgrounds, surfaces, borders, and controls. A **sun/moon toggle next to Preferences in the top header** switches directly between dark and light and saves the choice. The manager and toolbar popup share this preference. **Preferences → Appearance → Match system** remains available; the header toggle switches from the currently resolved system mode to an explicit light/dark choice.
+Dark mode uses soft charcoal backgrounds, lighter card surfaces, and muted sage accents. A **sun/moon toggle next to Preferences in the top header** switches directly between dark and light and saves the choice. The manager and toolbar popup share this preference. **Preferences → Appearance → Match system** remains available; the header toggle switches from the currently resolved system mode to an explicit light/dark choice.
 
 Card screenshots use a responsive **16:9 frame** so tabs saved on different monitors still align. **Fill card** is the default: images scale proportionally and crop at the edges to fill the frame. Settings → **Card screenshots → Fit whole image** shows the entire image with letterboxing when needed. Opening **Preview** always displays the complete stored image; neither display mode modifies screenshot data. The gallery avoids variable image heights, which would make mixed-monitor rows uneven.
 

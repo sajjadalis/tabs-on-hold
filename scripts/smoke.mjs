@@ -438,7 +438,11 @@ try {
   await manager.screenshot({ path: 'artifacts/manager-mixed-previews.png', fullPage: false });
   await manager.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
   await expect(manager.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await manager.screenshot({ path: 'artifacts/manager-mixed-previews-dark.png', fullPage: false });
+  await manager.screenshot({
+    path: 'artifacts/manager-mixed-previews-dark.png',
+    fullPage: false,
+    animations: 'disabled',
+  });
   await manager.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
   await manager.evaluate(async () => {
     const database = await new Promise((resolve) => {
@@ -924,7 +928,7 @@ try {
   await expect(manager.locator('html')).toHaveAttribute('data-theme', 'dark');
   expect(
     await manager.locator('html').evaluate((element) => getComputedStyle(element).backgroundColor),
-  ).toBe('rgb(9, 9, 11)');
+  ).toBe('rgb(37, 43, 42)');
   const themeButton = await manager
     .getByRole('button', { name: 'Switch to light mode', exact: true })
     .boundingBox();
@@ -936,7 +940,9 @@ try {
   const themePopup = await context.newPage();
   await themePopup.goto(`chrome-extension://${extensionId}/popup.html`);
   await expect(themePopup.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await themePopup.locator('.popup-shell').screenshot({ path: 'artifacts/popup-dark.png' });
+  await themePopup
+    .locator('.popup-shell')
+    .screenshot({ path: 'artifacts/popup-dark.png', animations: 'disabled' });
   await manager.bringToFront();
   await manager.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
   await expect(manager.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -964,7 +970,11 @@ try {
   await expect(manager.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(themePopup.locator('html')).toHaveAttribute('data-theme', 'dark');
   await themePopup.close();
-  await manager.screenshot({ path: 'artifacts/manager-dark.png', fullPage: true });
+  await manager.screenshot({
+    path: 'artifacts/manager-dark.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
   await manager.getByRole('button', { name: 'Settings', exact: true }).click();
   await manager.getByRole('button', { name: /Delete all saved data/ }).click();
   await manager.getByRole('button', { name: 'Delete everything saved', exact: true }).click();
@@ -1224,7 +1234,7 @@ try {
   expect(keptWindowTabs).toHaveLength(1);
   expect(keptWindowTabs[0]).toMatchObject({ url: 'about:blank', active: true });
   console.log(
-    'Browser smoke passed: zinc dark palette, header theme toggle beside preferences, theme persistence and popup sync, system theme override, timed success notifications, stale-result hiding, persistent errors, outside-click/Escape/action menu dismissal, real viewport/video capture, pinned exclusion, persistent blobs, mixed-monitor previews, keyboard menu moves, native single/bulk drag moves, bulk destination picker, empty-session cleanup, search, favorites, list view, restore keep/remove, partial restore, sleeping-tab skip/wake, complete deletion, 1,000-tab search and batching, narrow layout.',
+    'Browser smoke passed: charcoal and sage dark palette, header theme toggle beside preferences, theme persistence and popup sync, system theme override, timed success notifications, stale-result hiding, persistent errors, outside-click/Escape/action menu dismissal, real viewport/video capture, pinned exclusion, persistent blobs, mixed-monitor previews, keyboard menu moves, native single/bulk drag moves, bulk destination picker, empty-session cleanup, search, favorites, list view, restore keep/remove, partial restore, sleeping-tab skip/wake, complete deletion, 1,000-tab search and batching, narrow layout.',
   );
   console.log(`Screenshot sizes: ${imageInfo.map((image) => image.bytes + ' B').join(', ')}`);
 } finally {

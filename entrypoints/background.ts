@@ -11,11 +11,13 @@ import {
 } from '../lib/model';
 import { getSettings } from '../lib/settings';
 import type { Request } from '../lib/api';
+import { initToolbarCounter } from '../lib/toolbar';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export default defineBackground(() => {
+  initToolbarCounter();
   let busy = false;
   let lastCapture = 0;
   let resuming: Promise<unknown> | undefined;
@@ -158,7 +160,51 @@ export default defineBackground(() => {
     const sessionId = crypto.randomUUID();
     let activeTabs: chrome.tabs.Tab[] = [];
     const guardTabs = new Map<number, number>();
+    const deferred: { source: chrome.tabs.Tab; saved: SavedTab }[] = [];
     let showManager = false;
+    const closeSource = async (sourceTab: chrome.tabs.Tab, saved: SavedTab): Promise<boolean> => {
+      const checkSource = async () => {
+        const current = await chrome.tabs.get(sourceTab.id!);
+        if (current.url !== saved.url || current.pendingUrl) {
+          await db.tabs.update(saved.id, { closeState: 'changed' });
+          throw new Error(
+            'The page changed; its original URL is saved and the live tab was left open.',
+          );
+        }
+        return current;
+      };
+      const current = await checkSource();
+      if (!(await db.tabs.get(saved.id)))
+        throw new Error('The saved record is missing. The source tab was left open.');
+      const remaining = await chrome.tabs.query({ windowId: current.windowId });
+      const others = remaining.filter((tab) => tab.id !== current.id);
+      if (!others.length) {
+        // Capture and commit the last source before creating its replacement.
+        // Never remove that last source unless Chrome acknowledges the new tab.
+        const blank = await chrome.tabs.create({
+          url: 'about:blank',
+          active: true,
+          windowId: current.windowId,
+        });
+        if (blank.id === undefined)
+          throw new Error(
+            'Chrome could not create the final blank tab. The saved source was left open.',
+          );
+        guardTabs.set(current.windowId, blank.id);
+        await checkSource();
+      } else if (current.active) {
+        // Use an existing awake tab so closing this one cannot wake a sleeping
+        // neighbor. If none exists, finish the sleeping sources first.
+        const next = others.find((tab) => !tab.discarded && !tab.frozen);
+        if (!next?.id) return false;
+        await chrome.tabs.update(next.id, { active: true });
+        await checkSource();
+      }
+      await chrome.tabs.remove(sourceTab.id!);
+      await db.tabs.update(saved.id, { closeState: 'closed' });
+      closed++;
+      return true;
+    };
     try {
       const settings = await getSettings();
       showManager = settings.openManagerAfterSaving;
@@ -210,18 +256,6 @@ export default defineBackground(() => {
         });
         await db.tabs.bulkAdd(records);
       });
-      if (!message.copy) {
-        // Keep the last window alive until final database writes commit, then
-        // remove only our own guard so an emptied source window can close.
-        for (const windowId of new Set(source.map((tab) => tab.windowId))) {
-          const guard = await chrome.tabs.create({
-            url: 'about:blank',
-            active: false,
-            windowId,
-          });
-          if (guard.id) guardTabs.set(windowId, guard.id);
-        }
-      }
       for (let i = 0; i < source.length; i++) {
         if ((await db.jobs.get('current'))?.cancelRequested) break;
         const tab = source[i];
@@ -235,31 +269,8 @@ export default defineBackground(() => {
             if (!(await capturePreview(tab, saved, settings.quality, settings.captureSleepingTabs)))
               skipped++;
           }
-          if (!message.copy) {
-            const current = await chrome.tabs.get(tab.id!);
-            if (current.url !== saved.url || current.pendingUrl) {
-              await db.tabs.update(saved.id, { closeState: 'changed' });
-              throw new Error(
-                'The page changed; its original URL is saved and the live tab was left open.',
-              );
-            }
-            // A committed saved record is mandatory even when previews are disabled.
-            if (!(await db.tabs.get(saved.id)))
-              throw new Error('The saved record is missing. The source tab was left open.');
-            if (current.active) {
-              const guardId = guardTabs.get(current.windowId);
-              if (!guardId) throw new Error('Could not prepare this window for closing safely.');
-              // Closing the active tab would otherwise auto-select its neighbor,
-              // accidentally loading a discarded tab even when previews are off.
-              await chrome.tabs.update(guardId, { active: true });
-              const afterBlur = await chrome.tabs.get(tab.id!);
-              if (afterBlur.url !== saved.url || afterBlur.pendingUrl)
-                throw new Error('The page changed before closing. The source tab was left open.');
-            }
-            await chrome.tabs.remove(tab.id!);
-            await db.tabs.update(saved.id, { closeState: 'closed' });
-            closed++;
-          }
+          if (!message.copy && !(await closeSource(tab, saved)))
+            deferred.push({ source: tab, saved });
         } catch (error) {
           const reason = errorMessage(error);
           issues.push(`${saved.title}: ${reason}`);
@@ -271,6 +282,18 @@ export default defineBackground(() => {
         await updateJob({ done, failed: issues.length, issues });
       }
       const cancelled = Boolean((await db.jobs.get('current'))?.cancelRequested);
+      if (!cancelled) {
+        for (const item of deferred) {
+          try {
+            if (!(await closeSource(item.source, item.saved)))
+              throw new Error(
+                'This saved source was left open to avoid waking remaining sleeping tabs.',
+              );
+          } catch (error) {
+            issues.push(`${item.saved.title}: ${errorMessage(error)}`);
+          }
+        }
+      }
       await db.tabs
         .where('sessionId')
         .equals(sessionId)
@@ -311,35 +334,18 @@ export default defineBackground(() => {
       }
       try {
         if (showManager) await openManager();
-        else if (
-          !message.copy &&
-          (message.scope === 'window' || message.scope === 'all') &&
-          (await db.jobs.get('current'))?.status === 'completed'
-        ) {
-          // An already-open manager must not keep a fully saved source window
-          // alive. Never remove excluded, failed, or newly opened website tabs.
-          const managerUrl = chrome.runtime.getURL('/manager.html');
-          for (const windowId of new Set(source.map((tab) => tab.windowId))) {
-            const guardTabId = guardTabs.get(windowId);
-            const remaining = await chrome.tabs.query({ windowId });
-            if (
-              remaining.every(
-                (tab) => tab.id === guardTabId || tab.url?.split('?')[0] === managerUrl,
-              )
-            ) {
-              for (const tab of remaining) {
-                if (tab.id && tab.id !== guardTabId) await chrome.tabs.remove(tab.id);
-              }
-            }
-          }
-        }
       } catch {
         /* Saved data remains accessible through the toolbar. */
       } finally {
         try {
-          for (const guardTabId of guardTabs.values()) {
+          for (const [windowId, guardTabId] of guardTabs) {
             try {
-              await chrome.tabs.remove(guardTabId);
+              const remaining = await chrome.tabs.query({ windowId });
+              const guard = remaining.find((tab) => tab.id === guardTabId);
+              // A user may have navigated our blank tab while saving. Keep it.
+              if (!guard || guard.url !== 'about:blank' || guard.pendingUrl) continue;
+              if (remaining.length > 1) await chrome.tabs.remove(guardTabId);
+              else await chrome.tabs.update(guardTabId, { active: true });
             } catch {
               /* Already closed. */
             }
@@ -526,6 +532,20 @@ export default defineBackground(() => {
       throw new Error(
         'Another tab operation is running. Wait for it to finish or cancel it first.',
       );
+    if (message.type === 'OPEN') {
+      busy = true;
+      try {
+        const saved = await db.tabs.get(message.id);
+        if (!saved) throw new Error('This saved tab is no longer available.');
+        if (!canRestore(saved.url)) throw new Error('This address cannot be safely opened.');
+        const window = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+        const opened = await chrome.tabs.create({ url: saved.url, windowId: window.id, active: true });
+        if (opened.id === undefined) throw new Error('Chrome could not open this tab.');
+        return { tabId: opened.id };
+      } finally {
+        busy = false;
+      }
+    }
     if (message.type === 'PREPARE_ASIDE') {
       const source = await eligibleTabs(message.scope);
       if (!source.length) throw new Error('No eligible tabs to save.');

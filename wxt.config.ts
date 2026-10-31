@@ -11,7 +11,10 @@ export default defineConfig({
     permissions: ['tabs', 'tabGroups', 'storage', 'unlimitedStorage', 'alarms'],
     optional_host_permissions: ['<all_urls>'],
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
-    action: { default_title: 'Tabs Aside Done Right' },
+    action: {
+      default_title: 'Tabs Aside Done Right',
+      default_icon: { 16: 'icon/16.png', 24: 'icon/24.png', 32: 'icon/32.png' },
+    },
     commands: {
       'set-aside': {
         suggested_key: { default: 'Alt+Shift+A' },

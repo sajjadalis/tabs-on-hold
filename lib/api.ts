@@ -8,6 +8,7 @@ export type Request =
   | { type: 'RESUME_ASIDE'; token: string }
   | { type: 'DISCARD_ASIDE'; token: string }
   | { type: 'RESTORE'; ids: string[]; remove: boolean; newWindow: boolean }
+  | { type: 'OPEN'; id: string }
   | { type: 'DELETE'; ids: string[] }
   | { type: 'MOVE'; ids: string[]; destinationId: string }
   | { type: 'CLEAR' }

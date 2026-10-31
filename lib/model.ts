@@ -68,6 +68,7 @@ export interface Settings {
   quality: 'balanced' | 'high' | 'small';
   theme: 'light' | 'dark' | 'system';
   cardImageFit: 'cover' | 'contain';
+  sessionTabLimit: 0 | 12 | 24 | 48 | 100;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -79,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
   quality: 'balanced',
   theme: 'light',
   cardImageFit: 'cover',
+  sessionTabLimit: 0,
 };
 
 export type Scope = 'window' | 'selected' | 'current' | 'all';

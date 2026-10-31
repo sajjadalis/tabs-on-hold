@@ -8,6 +8,7 @@ const settings = vi.hoisted(() => vi.fn());
 vi.mock('wxt/utils/define-background', () => ({ defineBackground: (main: () => void) => main }));
 vi.mock('../lib/capture', () => ({ compressScreenshot: compress }));
 vi.mock('../lib/settings', () => ({ getSettings: settings }));
+vi.mock('../lib/toolbar', () => ({ initToolbarCounter: vi.fn() }));
 import background from '../entrypoints/background';
 
 let listener: (
@@ -43,7 +44,11 @@ async function settled(): Promise<Job> {
   await vi.waitFor(
     async () => {
       expect((await db.jobs.get('current'))?.status).not.toBe('running');
-      expect([...browserTabs.values()].some((tab) => tab.url === 'about:blank')).toBe(false);
+      // A finished save may retain one blank tab to keep an emptied window open.
+      for (const blank of [...browserTabs.values()].filter((tab) => tab.url === 'about:blank'))
+        expect(
+          [...browserTabs.values()].filter((tab) => tab.windowId === blank.windowId),
+        ).toHaveLength(1);
     },
     { timeout: 5000, interval: 20 },
   );
@@ -147,7 +152,9 @@ beforeEach(async () => {
       update: vi.fn(async (id: number, patch: Partial<chrome.tabs.Tab>) => {
         const record = browserTabs.get(id);
         if (!record) throw new Error('No tab');
-        if (patch.active) for (const tab of browserTabs.values()) tab.active = false;
+        if (patch.active)
+          for (const tab of browserTabs.values())
+            if (tab.windowId === record.windowId) tab.active = false;
         Object.assign(record, patch);
         return record;
       }),
@@ -156,6 +163,9 @@ beforeEach(async () => {
       }),
       create: vi.fn(async (properties: chrome.tabs.CreateProperties) => {
         const record = { ...tab(nextId++), ...properties };
+        if (record.active)
+          for (const existing of browserTabs.values())
+            if (existing.windowId === record.windowId) existing.active = false;
         browserTabs.set(record.id!, record);
         return record;
       }),
@@ -170,6 +180,61 @@ beforeEach(async () => {
 afterEach(async () => {
   await settled().catch(() => {});
   vi.unstubAllGlobals();
+});
+
+describe('open without removing', () => {
+  it('opens an active tab while preserving the library with remove-after-restore enabled', async () => {
+    await seedSaved();
+    const savedTabs = await db.tabs.toArray();
+    const savedSessions = await db.sessions.toArray();
+    const images = await db.screenshots.toArray();
+    const response = await send({ type: 'OPEN', id: 'saved-1' });
+    expect(response).toEqual({ ok: true, data: { tabId: 100 } });
+    expect(browser.tabs.create).toHaveBeenCalledWith({
+      url: 'https://example.com/1',
+      windowId: 1,
+      active: true,
+    });
+    expect(await db.tabs.toArray()).toEqual(savedTabs);
+    expect(await db.sessions.toArray()).toEqual(savedSessions);
+    expect(await db.screenshots.toArray()).toEqual(images);
+    expect(await db.jobs.count()).toBe(0);
+    expect(browser.tabs.remove).not.toHaveBeenCalled();
+  });
+  it('opens metadata-only tabs without requiring a screenshot', async () => {
+    await seedSaved();
+    await db.screenshots.delete('saved-1');
+    await db.tabs.update('saved-1', { preview: 'disabled', previewBytes: 0 });
+    expect((await send({ type: 'OPEN', id: 'saved-1' })).ok).toBe(true);
+    expect((await db.tabs.get('saved-1'))?.preview).toBe('disabled');
+    expect(await db.sessions.count()).toBe(1);
+    expect(await db.tabs.count()).toBe(2);
+  });
+  it('reports deleted records without opening a tab', async () => {
+    const response = await send({ type: 'OPEN', id: 'missing' });
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain('no longer available');
+    expect(browser.tabs.create).not.toHaveBeenCalled();
+  });
+  it('rejects unsafe saved addresses without opening or deleting them', async () => {
+    await seedSaved();
+    await db.tabs.update('saved-1', { url: 'javascript:alert(1)' });
+    const response = await send({ type: 'OPEN', id: 'saved-1' });
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain('cannot be safely opened');
+    expect(browser.tabs.create).not.toHaveBeenCalled();
+    expect(await db.tabs.get('saved-1')).toBeDefined();
+    expect(await db.screenshots.get('saved-1')).toBeDefined();
+  });
+  it('retains saved data and releases the action lock when Chrome fails to open a tab', async () => {
+    await seedSaved();
+    browser.tabs.create.mockRejectedValueOnce(new Error('Cannot create tab'));
+    const response = await send({ type: 'OPEN', id: 'saved-1' });
+    expect(response).toEqual({ ok: false, error: 'Cannot create tab' });
+    expect(await db.tabs.get('saved-1')).toBeDefined();
+    expect(await db.screenshots.get('saved-1')).toBeDefined();
+    expect((await send({ type: 'OPEN', id: 'saved-1' })).ok).toBe(true);
+  });
 });
 
 describe('save-before-close and failure recovery', () => {
@@ -397,7 +462,12 @@ describe('save-before-close and failure recovery', () => {
       ),
     ).toBe(false);
     expect(browser.windows.update).not.toHaveBeenCalled();
-    expect([...browserTabs.values()].some((tab) => tab.url === 'about:blank')).toBe(false);
+    expect([...browserTabs.values()]).toHaveLength(1);
+    expect([...browserTabs.values()][0]).toMatchObject({
+      url: 'about:blank',
+      active: true,
+      windowId: 1,
+    });
   });
   it('opens the manager after saving when that preference is enabled', async () => {
     settings.mockResolvedValue({ ...DEFAULT_SETTINGS, openManagerAfterSaving: true });
@@ -411,15 +481,76 @@ describe('save-before-close and failure recovery', () => {
     ).toBe(true);
     expect([...browserTabs.values()].some((tab) => tab.url === 'about:blank')).toBe(false);
   });
-  it('also closes a pre-existing manager when it is the only tab keeping a fully saved window open', async () => {
+  it('keeps a pre-existing manager without creating a blank tab', async () => {
     browserTabs.set(2, {
       ...tab(2, 'chrome-extension://test-extension/manager.html'),
       active: false,
     });
     await send({ type: 'ASIDE', scope: 'window', withoutPreviews: true });
     await settled();
+    expect(browserTabs.has(2)).toBe(true);
+    expect(browserTabs.size).toBe(1);
+    expect(browser.tabs.create).not.toHaveBeenCalled();
+  });
+  it('keeps one blank tab in every emptied source window when setting all tabs aside', async () => {
+    browserTabs.set(2, { ...tab(2), windowId: 2 });
+    browser.windows.getAll.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    await send({ type: 'ASIDE', scope: 'all', withoutPreviews: true });
+    expect((await settled()).done).toBe(2);
+    expect(browserTabs.has(1)).toBe(false);
     expect(browserTabs.has(2)).toBe(false);
-    expect(browserTabs.size).toBe(0);
+    for (const windowId of [1, 2]) {
+      const remaining = [...browserTabs.values()].filter((tab) => tab.windowId === windowId);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]).toMatchObject({ url: 'about:blank', active: true });
+    }
+  });
+  it('keeps excluded tabs without leaving an extra blank tab', async () => {
+    browserTabs.set(2, { ...tab(2), active: false, pinned: true });
+    await send({ type: 'ASIDE', scope: 'window', withoutPreviews: true });
+    await settled();
+    expect([...browserTabs.keys()]).toEqual([2]);
+    expect(browser.tabs.create).not.toHaveBeenCalled();
+    expect((await db.tabs.toArray()).map((tab) => tab.sourceTabId)).toEqual([1]);
+  });
+  it('keeps a final blank tab that the user navigates while it is being created', async () => {
+    const create = browser.tabs.create.getMockImplementation();
+    browser.tabs.create.mockImplementation(async (properties: chrome.tabs.CreateProperties) => {
+      const blank = await create(properties);
+      blank.url = 'https://example.org/new-page';
+      browserTabs.set(2, { ...tab(2), active: false, pinned: true });
+      return blank;
+    });
+    await send({ type: 'ASIDE', scope: 'window' });
+    await settled();
+    expect(
+      [...browserTabs.values()].some((tab) => tab.url === 'https://example.org/new-page'),
+    ).toBe(true);
+    expect(browserTabs.has(2)).toBe(true);
+  });
+  it('does not create a blank tab when saving a copy', async () => {
+    await send({ type: 'ASIDE', scope: 'window', copy: true, withoutPreviews: true });
+    await settled();
+    expect(browser.tabs.create).not.toHaveBeenCalled();
+    expect(browser.tabs.remove).not.toHaveBeenCalled();
+    expect(browserTabs.has(1)).toBe(true);
+  });
+  it('restores a session into a new window and removes its initial blank tab', async () => {
+    await seedSaved();
+    browser.windows.create.mockImplementation(async () => {
+      const blank = { ...tab(nextId++, 'about:blank'), windowId: 2 };
+      browserTabs.set(blank.id!, blank);
+      return { id: 2, tabs: [blank] };
+    });
+    await send({ type: 'RESTORE', ids: ['saved-1', 'saved-2'], remove: false, newWindow: true });
+    expect((await settled()).done).toBe(2);
+    expect(browser.windows.create).toHaveBeenCalledWith({ url: 'about:blank', focused: true });
+    expect(browserTabs.has(1)).toBe(true);
+    const restored = [...browserTabs.values()].filter((tab) => tab.windowId === 2);
+    expect(restored.map((tab) => tab.url)).toEqual([
+      'https://example.com/1',
+      'https://example.com/2',
+    ]);
   });
   it.each(['discarded', 'frozen'] as const)(
     'saves and closes a %s tab without waking it by default',
@@ -466,16 +597,56 @@ describe('save-before-close and failure recovery', () => {
     expect(browser.tabs.update).not.toHaveBeenCalledWith(2, { active: true });
     expect((await db.tabs.toArray()).filter((tab) => tab.preview === 'skipped')).toHaveLength(1);
   });
-  it('selects its temporary blank tab before closing an active source, avoiding automatic wake-up of the next tab', async () => {
-    browserTabs.set(2, { ...tab(2), active: false, discarded: true });
+  it('creates the blank tab only after earlier sources close and the last screenshot commits', async () => {
+    browserTabs.set(2, { ...tab(2), active: false });
+    const events: string[] = [];
+    const capture = browser.tabs.captureVisibleTab.getMockImplementation();
+    const create = browser.tabs.create.getMockImplementation();
+    const remove = browser.tabs.remove.getMockImplementation();
+    browser.tabs.captureVisibleTab.mockImplementation(async () => {
+      expect(browser.tabs.create).not.toHaveBeenCalled();
+      events.push('capture');
+      return capture();
+    });
+    browser.tabs.create.mockImplementation(async (properties: chrome.tabs.CreateProperties) => {
+      expect([...browserTabs.keys()]).toEqual([2]);
+      expect((await db.tabs.toArray()).find((tab) => tab.sourceTabId === 2)?.preview).toBe('ready');
+      events.push('blank');
+      return create(properties);
+    });
     browser.tabs.remove.mockImplementation(async (id: number) => {
-      if (id === 1)
+      events.push(`close-${id}`);
+      return remove(id);
+    });
+    await send({ type: 'ASIDE', scope: 'window' });
+    expect((await settled()).failed).toBe(0);
+    expect(events).toEqual(['capture', 'close-1', 'capture', 'blank', 'close-2']);
+    expect([...browserTabs.values()]).toHaveLength(1);
+    expect([...browserTabs.values()][0].url).toBe('about:blank');
+  });
+  it('leaves the last source open if Chrome cannot create its replacement tab', async () => {
+    browser.tabs.create.mockRejectedValue(new Error('cannot create tab'));
+    await send({ type: 'ASIDE', scope: 'window' });
+    expect((await settled()).failed).toBe(1);
+    expect(browser.tabs.remove).not.toHaveBeenCalled();
+    expect(browserTabs.has(1)).toBe(true);
+    expect((await db.tabs.toArray())[0]).toMatchObject({ preview: 'ready', closeState: 'open' });
+  });
+  it('closes sleeping sources before replacing the last active tab without waking sleepers', async () => {
+    browserTabs.set(2, { ...tab(2), active: false, discarded: true });
+    const closeOrder: number[] = [];
+    browser.tabs.remove.mockImplementation(async (id: number) => {
+      closeOrder.push(id);
+      if (id === 1) {
+        expect(browserTabs.has(2)).toBe(false);
         expect([...browserTabs.values()].find((tab) => tab.active)?.url).toBe('about:blank');
+      }
       browserTabs.delete(id);
     });
     await send({ type: 'ASIDE', scope: 'window' });
     expect((await settled()).failed).toBe(0);
     expect(browser.tabs.update).not.toHaveBeenCalledWith(2, { active: true });
+    expect(closeOrder).toEqual([2, 1]);
   });
   it('times out a sleeping tab that never loads and preserves its source and URL', async () => {
     settings.mockResolvedValue({ ...DEFAULT_SETTINGS, captureSleepingTabs: true });

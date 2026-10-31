@@ -83,6 +83,52 @@ try {
     return job;
   };
 
+  // The native toolbar badge must follow each window, including pinned/internal tabs.
+  expect(manifest.action.default_icon['16']).toBe('icon/16.png');
+  expect(manifest.action.default_icon['24']).toBe('icon/24.png');
+  const verifyBadges = async () => {
+    await expect
+      .poll(() =>
+        worker.evaluate(async () => {
+          const tabs = await chrome.tabs.query({});
+          const issues = [];
+          for (const tab of tabs) {
+            const count = tabs.filter((other) => other.windowId === tab.windowId).length;
+            const text = await chrome.action.getBadgeText({ tabId: tab.id });
+            const title = await chrome.action.getTitle({ tabId: tab.id });
+            if (
+              text !== String(count) ||
+              !title.includes(`${count} ${count === 1 ? 'tab' : 'tabs'} in this window`)
+            )
+              issues.push({ tabId: tab.id, count, text, title });
+          }
+          return issues;
+        }),
+      )
+      .toEqual([]);
+  };
+  await verifyBadges();
+  const badgeWindow = await worker.evaluate(() => chrome.windows.create({ url: 'about:blank' }));
+  const badgeTab = await manager.evaluate(async () => {
+    const current = await chrome.tabs.getCurrent();
+    return chrome.tabs.create({
+      windowId: current.windowId,
+      url: 'chrome://version',
+      pinned: true,
+    });
+  });
+  await verifyBadges();
+  await worker.evaluate(({ tabId, windowId }) => chrome.tabs.move(tabId, { windowId, index: -1 }), {
+    tabId: badgeTab.id,
+    windowId: badgeWindow.id,
+  });
+  await verifyBadges();
+  await worker.evaluate((tabId) => chrome.tabs.remove(tabId), badgeTab.id);
+  await verifyBadges();
+  await worker.evaluate((windowId) => chrome.windows.remove(windowId), badgeWindow.id);
+  await verifyBadges();
+  await manager.bringToFront();
+
   // Empty state and screenshot defaults.
   await expect(manager.getByText('Room for what’s next.')).toBeVisible();
   const sources = [];
@@ -218,7 +264,7 @@ try {
   expect(Math.abs(videoColor[1] - 75)).toBeLessThan(15);
   expect(Math.abs(videoColor[2] - 100)).toBeLessThan(15);
   await expect(manager.locator('.tab-card')).toHaveCount(3);
-  await expect(manager.locator('.card-preview img')).toHaveCount(3);
+  await expect(manager.locator('.preview-hit > img')).toHaveCount(3);
   await manager.bringToFront();
   // A full gallery verifies actual above-the-fold density, not just an empty layout.
   const galleryIds = await manager.evaluate(async () => {
@@ -288,9 +334,9 @@ try {
   await manager.reload();
   await manager.setViewportSize({ width: 1440, height: 800 });
   await expect(manager.locator('.tab-card')).toHaveCount(12);
-  await expect(manager.locator('.card-preview img')).toHaveCount(12);
+  await expect(manager.locator('.preview-hit > img')).toHaveCount(12);
   const monitorShapes = await manager
-    .locator('.card-preview img')
+    .locator('.preview-hit > img')
     .evaluateAll((images) => images.map((image) => image.naturalWidth / image.naturalHeight));
   expect(monitorShapes.some((ratio) => ratio > 3)).toBe(true);
   expect(monitorShapes.some((ratio) => ratio < 0.6)).toBe(true);
@@ -303,7 +349,7 @@ try {
   expect(frames.every((frame) => Math.abs(frame.width / frame.height - 16 / 9) < 0.025)).toBe(true);
   expect(
     await manager
-      .locator('.card-preview img')
+      .locator('.preview-hit > img')
       .first()
       .evaluate((image) => getComputedStyle(image).objectFit),
   ).toBe('cover');
@@ -324,6 +370,93 @@ try {
       .evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
   ).toBeGreaterThanOrEqual(14);
   await manager.screenshot({ path: 'artifacts/manager-sessions.png', fullPage: false });
+  // Mixed cards share their frame/body geometry, including missing and corrupt blobs.
+  await manager.evaluate(async () => {
+    const database = await new Promise((resolve) => {
+      const open = indexedDB.open('tabs-aside-done-right');
+      open.onsuccess = () => resolve(open.result);
+    });
+    const template = await new Promise((resolve) => {
+      database.transaction('tabs').objectStore('tabs').getAll().onsuccess = (event) =>
+        resolve(event.target.result[0]);
+    });
+    const write = database.transaction(['tabs', 'screenshots'], 'readwrite');
+    ['disabled', 'skipped', 'failed', 'pending', 'ready', 'ready'].forEach((preview, index) => {
+      const id = `placeholder-${index}`;
+      write.objectStore('tabs').put({
+        ...template,
+        id,
+        title: `Placeholder ${index}`,
+        preview,
+        previewBytes: 0,
+        position: -10 + index,
+        index: -10 + index,
+        closeState: 'closed',
+      });
+      if (index === 5)
+        write.objectStore('screenshots').put({
+          tabId: id,
+          blob: new Blob(['invalid-image'], { type: 'image/webp' }),
+          bytes: 13,
+          width: 100,
+          height: 100,
+          capturedAt: 1,
+        });
+    });
+    await new Promise((resolve) => {
+      write.oncomplete = resolve;
+    });
+    database.close();
+  });
+  await manager.reload();
+  const mixedCards = manager.locator('.tab-card').filter({ hasText: /Placeholder [0-5]/ });
+  await expect(mixedCards).toHaveCount(6);
+  for (const card of await mixedCards.all()) {
+    await card.scrollIntoViewIfNeeded();
+    await expect(card.locator('.preview-placeholder')).toBeVisible();
+    await expect(card.locator('.placeholder-art')).toHaveJSProperty('naturalWidth', 144);
+    await expect(card.locator('.preview-hit')).toBeDisabled();
+    await expect(card.getByRole('button', { name: /^Preview / })).toHaveCount(0);
+    await card.hover();
+    await expect(card.getByRole('button', { name: /^Restore / })).toBeVisible();
+  }
+  const geometry = await manager.locator('.tab-card').evaluateAll((cards) =>
+    cards.map((card) => {
+      const frame = card.querySelector('.card-preview').getBoundingClientRect();
+      const body = card.querySelector('.card-body').getBoundingClientRect();
+      return {
+        height: card.getBoundingClientRect().height,
+        ratio: frame.width / frame.height,
+        body: body.height,
+      };
+    }),
+  );
+  expect(geometry.every((box) => Math.abs(box.ratio - 16 / 9) < 0.025)).toBe(true);
+  expect(new Set(geometry.map((box) => box.height)).size).toBe(1);
+  expect(new Set(geometry.map((box) => box.body)).size).toBe(1);
+  await manager.locator('.tab-card').first().scrollIntoViewIfNeeded();
+  await manager.screenshot({ path: 'artifacts/manager-mixed-previews.png', fullPage: false });
+  await manager.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+  await expect(manager.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await manager.screenshot({ path: 'artifacts/manager-mixed-previews-dark.png', fullPage: false });
+  await manager.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+  await manager.evaluate(async () => {
+    const database = await new Promise((resolve) => {
+      const open = indexedDB.open('tabs-aside-done-right');
+      open.onsuccess = () => resolve(open.result);
+    });
+    const write = database.transaction(['tabs', 'screenshots'], 'readwrite');
+    for (let index = 0; index < 6; index++) {
+      write.objectStore('tabs').delete(`placeholder-${index}`);
+      write.objectStore('screenshots').delete(`placeholder-${index}`);
+    }
+    await new Promise((resolve) => {
+      write.oncomplete = resolve;
+    });
+    database.close();
+  });
+  await manager.reload();
+  await expect(manager.locator('.tab-card')).toHaveCount(12);
   await manager.locator('.card-preview').first().hover();
   await expect(
     manager
@@ -345,7 +478,7 @@ try {
   await expect(manager.locator('.app-shell')).toHaveAttribute('data-preview-fit', 'contain');
   expect(
     await manager
-      .locator('.card-preview img')
+      .locator('.preview-hit > img')
       .first()
       .evaluate((image) => getComputedStyle(image).objectFit),
   ).toBe('contain');
@@ -484,6 +617,39 @@ try {
   await expect(manager.locator('.tab-card')).toHaveCount(3);
   expect((await read('screenshots')).length).toBe(3);
 
+  // Open is independent of restore-and-remove, and never modifies saved data or jobs.
+  const verifyOpen = async (title, expectedUrl) => {
+    const beforeOpen = await Promise.all(['tabs', 'sessions', 'jobs'].map(read));
+    const beforeImages = (await read('screenshots')).map(({ blob, ...metadata }) => metadata);
+    const openedPage = context.waitForEvent('page');
+    await manager
+      .getByRole('button', { name: `Open ${title} without removing`, exact: true })
+      .click();
+    const opened = await openedPage;
+    await expect(opened).toHaveURL(expectedUrl);
+    const active = await worker.evaluate(async () =>
+      (await chrome.tabs.query({ active: true })).map((tab) => tab.url),
+    );
+    expect(active).toContain(expectedUrl);
+    expect(await Promise.all(['tabs', 'sessions', 'jobs'].map(read))).toEqual(beforeOpen);
+    expect((await read('screenshots')).map(({ blob, ...metadata }) => metadata)).toEqual(
+      beforeImages,
+    );
+    await opened.close();
+    await manager.bringToFront();
+  };
+  await expect(manager.getByRole('checkbox', { name: 'Remove after restoring' })).toBeChecked();
+  await verifyOpen('A quiet moment', `${base}/video`);
+  await expect(manager.locator('.tab-card')).toHaveCount(3);
+  await manager.getByRole('button', { name: 'List view', exact: true }).click();
+  await verifyOpen('A quiet moment', `${base}/video`);
+  await expect(manager.locator('.list-card')).toHaveCount(3);
+  await manager.getByRole('button', { name: 'Card view', exact: true }).click();
+  await manager
+    .getByRole('button', { name: 'Open A quiet moment without removing', exact: true })
+    .hover();
+  await manager.screenshot({ path: 'artifacts/manager-open-action.png', fullPage: false });
+
   // Read-only preview, rename, favorites, searching and layouts.
   const quietPreview = manager.locator('.card-preview').filter({
     has: manager.getByRole('button', { name: 'Enlarge preview of A quiet moment', exact: true }),
@@ -611,10 +777,10 @@ try {
     (await read('tabs')).some((tab) => tab.url.endsWith('/plain') && tab.preview === 'disabled'),
   ).toBe(true);
 
-  // Fully captured source windows close without creating a manager in them.
+  // Fully captured source windows stay open with one active blank tab.
   const captureWindow = await worker.evaluate(async (base) => {
     const window = await chrome.windows.create({
-      url: [`${base}/close-one`, `${base}/close-two`, chrome.runtime.getURL('/manager.html')],
+      url: [`${base}/close-one`, `${base}/close-two`],
       type: 'normal',
     });
     return window.id;
@@ -623,24 +789,39 @@ try {
     .poll(async () =>
       worker.evaluate(async (id) => {
         const tabs = await chrome.tabs.query({ windowId: id });
-        return tabs.length === 3 && tabs.every((tab) => tab.status === 'complete');
+        return tabs.length === 2 && tabs.every((tab) => tab.status === 'complete');
       }, captureWindow),
     )
     .toBe(true);
+  await worker.evaluate((windowId) => {
+    globalThis.windowSaveTrace = [];
+    globalThis.windowSaveCreated = (tab) => {
+      if (tab.windowId === windowId)
+        globalThis.windowSaveTrace.push({ type: 'created', id: tab.id });
+    };
+    globalThis.windowSaveRemoved = (id, info) => {
+      if (info.windowId === windowId) globalThis.windowSaveTrace.push({ type: 'removed', id });
+    };
+    chrome.tabs.onCreated.addListener(globalThis.windowSaveCreated);
+    chrome.tabs.onRemoved.addListener(globalThis.windowSaveRemoved);
+  }, captureWindow);
   expect((await send({ type: 'ASIDE', scope: 'window', windowId: captureWindow })).ok).toBe(true);
   expect((await waitDone()).done).toBe(2);
   await expect
     .poll(() =>
       worker.evaluate(async (id) => {
-        try {
-          await chrome.windows.get(id);
-          return false;
-        } catch {
-          return true;
-        }
+        const tabs = await chrome.tabs.query({ windowId: id });
+        return tabs.length === 1 && tabs[0].url === 'about:blank' && tabs[0].active;
       }, captureWindow),
     )
     .toBe(true);
+  await expect.poll(() => worker.evaluate(() => globalThis.windowSaveTrace.length)).toBe(3);
+  const saveTrace = await worker.evaluate(() => {
+    chrome.tabs.onCreated.removeListener(globalThis.windowSaveCreated);
+    chrome.tabs.onRemoved.removeListener(globalThis.windowSaveRemoved);
+    return globalThis.windowSaveTrace;
+  });
+  expect(saveTrace.map((event) => event.type)).toEqual(['removed', 'created', 'removed']);
   expect(
     await worker.evaluate(
       async () =>
@@ -648,7 +829,7 @@ try {
     ),
   ).toBe(1);
 
-  // Real Chrome-discarded tabs skip activation and use compact cards without image areas.
+  // Real Chrome-discarded tabs skip activation and show a consistent placeholder frame.
   async function sleepingWindow(prefix) {
     const windowId = await worker.evaluate(
       async ({ base, prefix }) => {
@@ -708,7 +889,8 @@ try {
   await manager.bringToFront();
   await manager.getByRole('textbox', { name: 'Search tabs and sessions' }).fill('/skip-sleeping');
   await expect(manager.locator('.tab-card')).toHaveCount(1);
-  await expect(manager.locator('.card-preview')).toHaveCount(0);
+  await expect(manager.locator('.card-preview')).toHaveCount(1);
+  await expect(manager.locator('.preview-placeholder')).toHaveCount(1);
   await manager.screenshot({ path: 'artifacts/manager-sleeping.png', fullPage: false });
   await manager.getByRole('button', { name: 'Clear search' }).click();
 
@@ -840,13 +1022,16 @@ try {
   await manager.getByRole('button', { name: 'Import 1 session · 3 tabs', exact: true }).click();
   await expect(manager.locator('dialog')).toHaveCount(0);
   await expect(manager.locator('.tab-card')).toHaveCount(3);
-  await expect(manager.locator('.card-preview')).toHaveCount(0);
-  await expect(manager.locator('.preview-placeholder')).toHaveCount(0);
+  await expect(manager.locator('.card-preview')).toHaveCount(3);
+  await expect(manager.locator('.preview-placeholder')).toHaveCount(3);
   expect(await read('screenshots')).toHaveLength(0);
   expect(hits.get('/import-a')).toBeUndefined();
   const imported = await read('tabs');
   expect(imported.filter((t) => t.group?.title === 'Migration group')).toHaveLength(2);
   await manager.screenshot({ path: 'artifacts/imported-sessions.png', fullPage: false });
+  await verifyOpen('Migration A', `${base}/import-a`);
+  await expect(manager.locator('.tab-card')).toHaveCount(3);
+  await expect(manager.locator('.preview-placeholder')).toHaveCount(3);
   await manager.getByRole('button', { name: 'Import sessions', exact: true }).click();
   await upload(migration);
   await expect(
@@ -861,7 +1046,18 @@ try {
   ).toBeEnabled();
   await manager.getByRole('button', { name: 'Cancel', exact: true }).click();
   // Restoring an imported session recreates actual Chrome tab groups.
-  await send({ type: 'RESTORE', ids: imported.map((t) => t.id), remove: false, newWindow: true });
+  await manager.getByRole('checkbox', { name: 'Remove after restoring' }).uncheck();
+  const managerWindowId = await manager.evaluate(
+    async () => (await chrome.windows.getCurrent()).id,
+  );
+  const beforeSessionRestore = await worker.evaluate(async () =>
+    (await chrome.tabs.query({})).map((tab) => ({ id: tab.id, windowId: tab.windowId })),
+  );
+  const previousRestore = (await read('jobs'))[0]?.updatedAt ?? 0;
+  await manager.getByRole('button', { name: 'Restore 3', exact: true }).click();
+  await expect
+    .poll(async () => (await read('jobs'))[0]?.updatedAt)
+    .toBeGreaterThan(previousRestore);
   expect((await waitDone()).failed).toBe(0);
   const restoredGroup = await worker.evaluate(async () => {
     const groups = await chrome.tabGroups.query({ title: 'Migration group' });
@@ -870,6 +1066,16 @@ try {
   });
   expect(restoredGroup.group.color).toBe('purple');
   expect(restoredGroup.tabs).toHaveLength(2);
+  expect(restoredGroup.group.windowId).not.toBe(managerWindowId);
+  expect(beforeSessionRestore.some((tab) => tab.windowId === restoredGroup.group.windowId)).toBe(
+    false,
+  );
+  const sessionWindowTabs = await worker.evaluate(
+    (id) => chrome.tabs.query({ windowId: id }),
+    restoredGroup.group.windowId,
+  );
+  expect(sessionWindowTabs).toHaveLength(3);
+  expect(sessionWindowTabs.some((tab) => tab.url === 'about:blank')).toBe(false);
   await worker.evaluate((id) => chrome.windows.remove(id), restoredGroup.group.windowId);
   await manager.bringToFront();
   await manager.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -958,11 +1164,46 @@ try {
       }),
   );
   await manager.reload();
+  // Sessions show every tab by default. Optional limits expose counts and persist.
+  await expect(manager.locator('.tab-card')).toHaveCount(1000, { timeout: 10000 });
+  await expect(manager.locator('.show-more-controls')).toHaveCount(0);
+  const researchSession = manager.locator('.session').filter({
+    has: manager.getByRole('button', { name: 'Research 0', exact: true }),
+  });
+  await expect(researchSession.locator('.tab-card')).toHaveCount(20);
+  await manager.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(manager.getByLabel('Tabs shown per session', { exact: true })).toHaveValue('0');
+  await manager.getByLabel('Tabs shown per session', { exact: true }).selectOption('12');
+  await manager.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(researchSession.locator('.tab-card')).toHaveCount(12);
+  await expect(researchSession.locator('.tab-visibility-note')).toHaveText(
+    'Showing 12 of 20 tabs · 8 tabs hidden',
+  );
+  await researchSession.getByRole('button', { name: 'Show remaining 8 tabs', exact: true }).click();
+  await expect(researchSession.locator('.tab-card')).toHaveCount(20);
+  await expect(researchSession.locator('.show-more-controls')).toHaveCount(0);
+  await manager.reload();
+  await expect(researchSession.locator('.tab-card')).toHaveCount(12);
+  await manager.screenshot({ path: 'artifacts/session-tab-limit.png', fullPage: false });
+  await manager.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(manager.getByLabel('Tabs shown per session', { exact: true })).toHaveValue('12');
+  await manager.getByLabel('Tabs shown per session', { exact: true }).selectOption('0');
+  await manager.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(manager.locator('.tab-card')).toHaveCount(1000, { timeout: 10000 });
+  await expect(researchSession.locator('.tab-card')).toHaveCount(20);
   await manager
     .getByRole('navigation', { name: 'Library' })
     .getByRole('button', { name: /All tabs/ })
     .click();
   await expect(manager.locator('.tab-card')).toHaveCount(60);
+  await expect(manager.locator('.tab-visibility-note')).toHaveText(
+    'Showing 60 of 1,000 tabs · 940 tabs hidden',
+  );
+  await manager.getByRole('button', { name: 'Show next 60 tabs', exact: true }).click();
+  await expect(manager.locator('.tab-card')).toHaveCount(120);
+  await manager.getByRole('button', { name: 'Show all 1,000 tabs', exact: true }).click();
+  await expect(manager.locator('.tab-card')).toHaveCount(1000, { timeout: 10000 });
+  await expect(manager.locator('.show-more-controls')).toHaveCount(0);
   await manager.getByRole('textbox', { name: 'Search tabs and sessions' }).fill('paper 49-19');
   await expect(manager.locator('.tab-card')).toHaveCount(1);
   await expect(manager.locator('.card-copy h3')).toHaveText('Research paper 49-19');
@@ -976,6 +1217,12 @@ try {
   expect(await read('tabs')).toHaveLength(0);
   expect(await read('screenshots')).toHaveLength(0);
   expect(errors).toEqual([]);
+  const keptWindowTabs = await worker.evaluate(
+    (id) => chrome.tabs.query({ windowId: id }),
+    captureWindow,
+  );
+  expect(keptWindowTabs).toHaveLength(1);
+  expect(keptWindowTabs[0]).toMatchObject({ url: 'about:blank', active: true });
   console.log(
     'Browser smoke passed: zinc dark palette, header theme toggle beside preferences, theme persistence and popup sync, system theme override, timed success notifications, stale-result hiding, persistent errors, outside-click/Escape/action menu dismissal, real viewport/video capture, pinned exclusion, persistent blobs, mixed-monitor previews, keyboard menu moves, native single/bulk drag moves, bulk destination picker, empty-session cleanup, search, favorites, list view, restore keep/remove, partial restore, sleeping-tab skip/wake, complete deletion, 1,000-tab search and batching, narrow layout.',
   );

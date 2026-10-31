@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import {
   ArrowUpRight,
+  ExternalLink,
   FolderInput,
   GripVertical,
   ImageOff,
@@ -18,6 +19,7 @@ export function TabCard({
   selected,
   onSelect,
   onRestore,
+  onOpen,
   onDelete,
   onFavorite,
   onPreview,
@@ -34,6 +36,7 @@ export function TabCard({
   selected: boolean;
   onSelect: () => void;
   onRestore: () => void;
+  onOpen: () => void;
   onDelete: () => void;
   onFavorite: () => void;
   onPreview: () => void;
@@ -49,6 +52,7 @@ export function TabCard({
   const ref = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [visible, setVisible] = useState(false);
+  const [failedImage, setFailedImage] = useState<string>();
   useEffect(() => {
     if (list || !ref.current) return;
     const observer = new IntersectionObserver(
@@ -62,6 +66,7 @@ export function TabCard({
     return () => observer.disconnect();
   }, [list]);
   const { url } = usePreview(tab.id, visible && !list && tab.preview === 'ready');
+  const hasPreview = Boolean(url && url !== failedImage);
   const initial = tab.domain
     .replace(/^www\./, '')
     .charAt(0)
@@ -70,10 +75,10 @@ export function TabCard({
   return (
     <article
       ref={ref}
-      className={`tab-card ${list ? 'list-card' : ''} ${tab.preview !== 'ready' && tab.preview !== 'pending' ? 'without-preview' : ''} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`}
+      className={`tab-card ${list ? 'list-card' : ''} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`}
       draggable={Boolean(onDragStart) && !disabled}
       onDragStart={(event) => {
-        if ((event.target as HTMLElement).closest('details,input')) {
+        if ((event.target as HTMLElement).closest('button,details,input')) {
           event.preventDefault();
           return;
         }
@@ -81,27 +86,32 @@ export function TabCard({
       }}
       onDragEnd={onDragEnd}
     >
-      {!list && (tab.preview === 'ready' || tab.preview === 'pending') && (
+      {!list && (
         <div className="card-preview">
           <button
             className="preview-hit"
             onClick={onPreview}
-            disabled={tab.preview !== 'ready'}
+            disabled={!hasPreview}
             aria-label={`Enlarge preview of ${tab.title}`}
           >
-            {url ? (
-              <img src={url} alt={`Saved visible area of ${tab.title}`} draggable={false} />
+            {hasPreview ? (
+              <img
+                src={url}
+                alt={`Saved visible area of ${tab.title}`}
+                draggable={false}
+                onError={() => setFailedImage(url)}
+              />
             ) : (
               <div className="preview-placeholder">
-                <span className="placeholder-window">
-                  <span />
-                  <span />
-                  <span />
-                  <i />
-                </span>
+                <img
+                  className="placeholder-art"
+                  src="/preview-placeholder.svg"
+                  alt=""
+                  draggable={false}
+                />
                 <span>
                   {tab.preview === 'ready'
-                    ? 'Loading preview…'
+                    ? 'Preview unavailable'
                     : tab.preview === 'pending'
                       ? 'Preparing preview…'
                       : tab.preview === 'skipped'
@@ -113,22 +123,22 @@ export function TabCard({
               </div>
             )}
           </button>
-          {tab.preview === 'ready' && (
-            <div className="preview-actions">
+          <div className="preview-actions">
+            {hasPreview && (
               <button onClick={onPreview} aria-label={`Preview ${tab.title}`}>
                 <Maximize2 size={16} />
                 Preview
               </button>
-              <button
-                onClick={onRestore}
-                disabled={disabled}
-                aria-label={`Restore ${tab.title} from preview`}
-              >
-                <ArrowUpRight size={16} />
-                Restore
-              </button>
-            </div>
-          )}
+            )}
+            <button
+              onClick={onRestore}
+              disabled={disabled}
+              aria-label={`Restore ${tab.title} from preview`}
+            >
+              <ArrowUpRight size={16} />
+              Restore
+            </button>
+          </div>
         </div>
       )}
       {onDragStart && (
@@ -155,7 +165,16 @@ export function TabCard({
         <div className="card-copy">
           <h3 title={tab.title}>{tab.title}</h3>
           <p title={tab.url}>
-            {tab.domain}
+            <span className="card-domain">{tab.domain}</span>
+            <button
+              className="open-tab"
+              onClick={onOpen}
+              disabled={disabled}
+              title="Open without removing"
+              aria-label={`Open ${tab.title} without removing`}
+            >
+              <ExternalLink size={13} aria-hidden="true" />
+            </button>
             {tab.pinned && <Pin size={11} />}
             {tab.preview === 'failed' && (
               <span title={tab.captureError}>
@@ -209,7 +228,7 @@ export function TabCard({
           </div>
         </details>
       </div>
-      {(list || tab.preview !== 'ready' || tab.closeState !== 'closed') && (
+      {(list || tab.closeState !== 'closed') && (
         <div className="card-footer">
           <span className="tab-state still-open">
             {tab.closeState === 'closed'
@@ -229,7 +248,7 @@ export function TabCard({
                 Preview
               </button>
             )}
-            {(list || tab.preview !== 'ready') && (
+            {list && (
               <button
                 className="restore-tab"
                 onClick={onRestore}

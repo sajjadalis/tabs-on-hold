@@ -186,6 +186,9 @@ export function Manager() {
     setSelected(new Set());
     setLimits({});
   }, [view, query, domain, previewFilter, age]);
+  useEffect(() => {
+    setLimits({});
+  }, [settings.sessionTabLimit]);
 
   const filtered = useMemo(() => {
     const minDate = age === 'any' ? 0 : Date.now() - Number(age) * 86400000;
@@ -257,6 +260,8 @@ export function Manager() {
     });
   const favoriteTab = (tab: SavedTab) =>
     void run(() => db.tabs.update(tab.id, { favorite: !tab.favorite }));
+  const openTab = (id: string) =>
+    void run(() => request({ type: 'OPEN', id }), 'Opened in a new tab. Saved copy kept.');
   const openMove = (ids: string[]) => {
     setError('');
     setDestinationId('');
@@ -338,53 +343,73 @@ export function Manager() {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     setNotice('URL backup exported. Screenshots are not included.');
   };
-  const renderCards = (records: SavedTab[], groupId: string) => (
-    <>
-      <div className={layout === 'cards' ? 'tab-grid' : 'tab-list'}>
-        {records.slice(0, limits[groupId] ?? (groupId === 'all' ? 60 : 12)).map((tab) => (
-          <TabCard
-            key={tab.id}
-            tab={tab}
-            list={layout === 'list'}
-            disabled={Boolean(busy)}
-            selected={selected.has(tab.id)}
-            onSelect={() => select(tab.id)}
-            onRestore={() => restore([tab.id])}
-            onDelete={() => remove([tab.id])}
-            onFavorite={() => favoriteTab(tab)}
-            onPreview={() => setPreview(tab)}
-            onMove={() => openMove([tab.id])}
-            canMove={sessions.length > 1}
-            onDragStart={
-              view === 'sessions' && sessions.length > 1
-                ? (event) => startDrag(event, tab)
-                : undefined
-            }
-            onDragEnd={endDrag}
-            dragging={draggingIds.includes(tab.id)}
-            sessionName={
-              view !== 'sessions'
-                ? sessions.find((session) => session.id === tab.sessionId)?.name
-                : undefined
-            }
-          />
-        ))}
-      </div>
-      {records.length > (limits[groupId] ?? (groupId === 'all' ? 60 : 12)) && (
-        <button
-          className="show-more"
-          onClick={() =>
-            setLimits({
-              ...limits,
-              [groupId]: (limits[groupId] ?? (groupId === 'all' ? 60 : 12)) + 60,
-            })
-          }
-        >
-          Show more tabs <ChevronDown size={16} />
-        </button>
-      )}
-    </>
-  );
+  const renderCards = (records: SavedTab[], groupId: string) => {
+    const batchSize = groupId === 'all' ? 60 : settings.sessionTabLimit || records.length;
+    const visible = Math.min(records.length, limits[groupId] ?? batchSize);
+    const hidden = records.length - visible;
+    return (
+      <>
+        {hidden > 0 && (
+          <p className="tab-visibility-note">
+            Showing {visible.toLocaleString()} of {plural(records.length, 'tab')} ·{' '}
+            {plural(hidden, 'tab')} hidden
+          </p>
+        )}
+        <div className={layout === 'cards' ? 'tab-grid' : 'tab-list'}>
+          {records.slice(0, visible).map((tab) => (
+            <TabCard
+              key={tab.id}
+              tab={tab}
+              list={layout === 'list'}
+              disabled={Boolean(busy)}
+              selected={selected.has(tab.id)}
+              onSelect={() => select(tab.id)}
+              onRestore={() => restore([tab.id])}
+              onOpen={() => openTab(tab.id)}
+              onDelete={() => remove([tab.id])}
+              onFavorite={() => favoriteTab(tab)}
+              onPreview={() => setPreview(tab)}
+              onMove={() => openMove([tab.id])}
+              canMove={sessions.length > 1}
+              onDragStart={
+                view === 'sessions' && sessions.length > 1
+                  ? (event) => startDrag(event, tab)
+                  : undefined
+              }
+              onDragEnd={endDrag}
+              dragging={draggingIds.includes(tab.id)}
+              sessionName={
+                view !== 'sessions'
+                  ? sessions.find((session) => session.id === tab.sessionId)?.name
+                  : undefined
+              }
+            />
+          ))}
+        </div>
+        {hidden > 0 && (
+          <div className="show-more-controls">
+            <button
+              className="secondary-button"
+              onClick={() =>
+                setLimits((current) => ({ ...current, [groupId]: visible + batchSize }))
+              }
+            >
+              {hidden > batchSize ? 'Show next' : 'Show remaining'}{' '}
+              {plural(Math.min(hidden, batchSize), 'tab')} <ChevronDown size={16} />
+            </button>
+            {hidden > batchSize && (
+              <button
+                className="text-button"
+                onClick={() => setLimits((current) => ({ ...current, [groupId]: Infinity }))}
+              >
+                Show all {plural(records.length, 'tab')}
+              </button>
+            )}
+          </div>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="app-shell" data-preview-fit={settings.cardImageFit}>
@@ -914,7 +939,13 @@ export function Manager() {
                       <button
                         className="secondary-button session-restore"
                         disabled={Boolean(busy)}
-                        onClick={() => restore(all.map((tab) => tab.id))}
+                        title="Restore this session in a new window"
+                        onClick={() =>
+                          restore(
+                            all.map((tab) => tab.id),
+                            true,
+                          )
+                        }
                       >
                         <ArrowUpRight size={15} />
                         Restore {all.length}
@@ -1219,8 +1250,8 @@ export function Manager() {
               <span>
                 <strong>Open manager after saving</strong>
                 <small>
-                  Off by default: saved tabs close and an emptied window closes with them. Excluded
-                  tabs and failed captures stay open.
+                  Off by default: saved tabs close and an emptied window keeps one blank tab.
+                  Excluded tabs and failed captures stay open.
                 </small>
               </span>
               <input
@@ -1304,6 +1335,30 @@ export function Manager() {
               >
                 <option value="cover">Fill card (crop edges)</option>
                 <option value="contain">Fit whole image</option>
+              </select>
+            </label>
+            <label className="setting-row">
+              <span>
+                <strong>Tabs shown per session</strong>
+                <small>
+                  Show every saved tab by default, or start with a fixed number and reveal more as
+                  needed.
+                </small>
+              </span>
+              <select
+                aria-label="Tabs shown per session"
+                value={settings.sessionTabLimit}
+                onChange={(event) =>
+                  void updateSettings({
+                    sessionTabLimit: Number(event.target.value) as typeof settings.sessionTabLimit,
+                  })
+                }
+              >
+                <option value={0}>All tabs (default)</option>
+                <option value={12}>12 tabs</option>
+                <option value={24}>24 tabs</option>
+                <option value={48}>48 tabs</option>
+                <option value={100}>100 tabs</option>
               </select>
             </label>
           </div>

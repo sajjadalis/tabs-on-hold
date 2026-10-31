@@ -307,10 +307,28 @@ describe('save-before-close and failure recovery', () => {
     });
     browser.tabs.group.mockRejectedValue(new Error('cannot create group'));
     await send({ type: 'RESTORE', ids: ['saved-1'], remove: true, newWindow: false });
-    expect((await settled()).done).toBe(1);
+    const result = await settled();
+    expect(result.done).toBe(1);
+    expect(result.issues.join(' ')).toContain('group could not be restored');
     expect(browser.tabs.create).toHaveBeenCalledTimes(1);
     expect(await db.tabs.get('saved-1')).toBeUndefined();
     expect(await db.screenshots.get('saved-1')).toBeUndefined();
+  });
+  it('recreates a saved group once and assigns all its restored tabs', async () => {
+    await seedSaved();
+    const group = { id: 9, title: 'Research', color: 'purple' as const, collapsed: true };
+    await db.tabs.update('saved-1', { group });
+    await db.tabs.update('saved-2', { group });
+    browser.tabs.group.mockResolvedValue(88);
+    await send({ type: 'RESTORE', ids: ['saved-1', 'saved-2'], remove: false, newWindow: false });
+    expect((await settled()).issues).toEqual([]);
+    expect(browser.tabs.group.mock.calls[0][0].groupId).toBeUndefined();
+    expect(browser.tabs.group.mock.calls[1][0].groupId).toBe(88);
+    expect(browser.tabGroups.update).toHaveBeenLastCalledWith(88, {
+      title: 'Research',
+      color: 'purple',
+      collapsed: true,
+    });
   });
   it('restores moved tabs in their session positions rather than their original window order', async () => {
     await seedSaved();

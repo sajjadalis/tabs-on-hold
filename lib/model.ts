@@ -5,6 +5,12 @@ export interface Session {
   favorite: boolean;
 }
 
+export interface ImportReceipt {
+  id: string;
+  sessionKeys: string[];
+  importedAt: number;
+}
+
 export interface SavedTab {
   id: string;
   sessionId: string;

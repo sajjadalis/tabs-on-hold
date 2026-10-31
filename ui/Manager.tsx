@@ -52,6 +52,8 @@ import {
   useTheme,
 } from './shared';
 import { TabCard } from './TabCard';
+import { ImportDialog } from './ImportDialog';
+import { createNativeBackup } from '../lib/imports';
 
 type ConfirmAction = {
   title: string;
@@ -128,6 +130,7 @@ export function Manager() {
   const [age, setAge] = useState('any');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [preview, setPreview] = useState<SavedTab>();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -322,14 +325,9 @@ export function Manager() {
     setAge('any');
   };
   const exportLibrary = async () => {
-    const payload = {
-      format: 'tabs-aside-done-right',
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      includesScreenshots: false,
-      sessions: await db.sessions.toArray(),
-      tabs: await db.tabs.toArray(),
-    };
+    const payload = await db.transaction('r', db.sessions, db.tabs, async () =>
+      createNativeBackup(await db.sessions.toArray(), await db.tabs.toArray()),
+    );
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
     );
@@ -466,6 +464,14 @@ export function Manager() {
             </div>
             <p>{plural(images?.count || 0, 'preview')} · stored on this device</p>
           </div>
+          <button
+            className="sidebar-action"
+            disabled={Boolean(busy)}
+            onClick={() => setImportOpen(true)}
+          >
+            <FolderInput size={17} />
+            Import sessions
+          </button>
           <button className="sidebar-action" onClick={() => setSettingsOpen(true)}>
             <Settings2 size={17} />
             Settings
@@ -983,6 +989,22 @@ export function Manager() {
           </button>
         </div>
       )}
+      {importOpen && (
+        <ImportDialog
+          onClose={() => setImportOpen(false)}
+          onComplete={(result) => {
+            setImportOpen(false);
+            setView('sessions');
+            setQuery('');
+            setDomain('');
+            setPreviewFilter('any');
+            setAge('any');
+            setNotice(
+              `Imported ${plural(result.sessions, 'session')} and ${plural(result.tabs, 'tab')}.`,
+            );
+          }}
+        />
+      )}
       {moveIds.length > 0 && (
         <Dialog
           initialFocus="#move-destination"
@@ -1299,9 +1321,23 @@ export function Manager() {
               <Download size={17} />
               <span>
                 <strong>Export a URL backup</strong>
+                <small>Session names, URLs, favorites, and groups. Images are excluded.</small>
+              </span>
+              <ArrowUpRight size={15} />
+            </button>
+            <button
+              className="settings-action"
+              disabled={Boolean(busy)}
+              onClick={() => {
+                setSettingsOpen(false);
+                setImportOpen(true);
+              }}
+            >
+              <FolderInput size={17} />
+              <span>
+                <strong>Import sessions</strong>
                 <small>
-                  Session names, URLs, and tab metadata. Images are excluded. Import support will
-                  follow.
+                  Restore a native backup or migrate from Tabs Aside or Tab Session Manager.
                 </small>
               </span>
               <ArrowUpRight size={15} />

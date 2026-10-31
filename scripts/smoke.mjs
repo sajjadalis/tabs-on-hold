@@ -648,7 +648,7 @@ try {
     ),
   ).toBe(1);
 
-  // Real Chrome-discarded tabs skip activation and show a placeholder by default.
+  // Real Chrome-discarded tabs skip activation and use compact cards without image areas.
   async function sleepingWindow(prefix) {
     const windowId = await worker.evaluate(
       async ({ base, prefix }) => {
@@ -707,7 +707,8 @@ try {
   expect(hits.get('/skip-sleeping')).toBe(beforeSkip);
   await manager.bringToFront();
   await manager.getByRole('textbox', { name: 'Search tabs and sessions' }).fill('/skip-sleeping');
-  await expect(manager.getByText('Sleeping tab · preview skipped', { exact: true })).toBeVisible();
+  await expect(manager.locator('.tab-card')).toHaveCount(1);
+  await expect(manager.locator('.card-preview')).toHaveCount(0);
   await manager.screenshot({ path: 'artifacts/manager-sleeping.png', fullPage: false });
   await manager.getByRole('button', { name: 'Clear search' }).click();
 
@@ -789,6 +790,133 @@ try {
   expect(await read('tabs')).toHaveLength(0);
   expect(await read('screenshots')).toHaveLength(0);
   expect(await read('sessions')).toHaveLength(0);
+
+  // Import migration data through the real file picker; never read private sample files here.
+  const migration = {
+    local: {
+      collections: [
+        {
+          type: 'collection',
+          title: 'Imported research',
+          timestamp: 1700000000000,
+          items: [
+            { type: 'tab', title: 'Migration overview', url: `${base}/import-overview` },
+            {
+              type: 'group',
+              title: 'Migration group',
+              color: 'purple',
+              items: [
+                { type: 'tab', title: 'Migration A', url: `${base}/import-a` },
+                { type: 'tab', title: 'Migration B', url: `${base}/import-b` },
+                {
+                  type: 'tab',
+                  title: 'Other extension settings',
+                  url: 'chrome-extension://other/options.html',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    sync: { analytics: true },
+  };
+  const upload = (data) =>
+    manager.locator('input[type=file]').setInputFiles({
+      name: 'backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(data)),
+    });
+  await manager.getByRole('button', { name: 'Import sessions', exact: true }).click();
+  await upload({ unrelated: true });
+  await expect(manager.getByRole('alert')).toContainText('Unrecognized backup');
+  expect(await read('tabs')).toHaveLength(0);
+  await upload(migration);
+  await expect(manager.getByRole('dialog').getByText('Tabs Aside', { exact: true })).toBeVisible();
+  await expect(manager.getByText(/1 tab with missing or unsupported addresses/)).toBeVisible();
+  await manager.locator('.import-session summary').click();
+  await expect(manager.getByText('Migration A', { exact: true })).toBeVisible();
+  await manager.screenshot({ path: 'artifacts/import-preview.png', fullPage: false });
+  await manager.getByRole('button', { name: 'Import 1 session · 3 tabs', exact: true }).click();
+  await expect(manager.locator('dialog')).toHaveCount(0);
+  await expect(manager.locator('.tab-card')).toHaveCount(3);
+  await expect(manager.locator('.card-preview')).toHaveCount(0);
+  await expect(manager.locator('.preview-placeholder')).toHaveCount(0);
+  expect(await read('screenshots')).toHaveLength(0);
+  expect(hits.get('/import-a')).toBeUndefined();
+  const imported = await read('tabs');
+  expect(imported.filter((t) => t.group?.title === 'Migration group')).toHaveLength(2);
+  await manager.screenshot({ path: 'artifacts/imported-sessions.png', fullPage: false });
+  await manager.getByRole('button', { name: 'Import sessions', exact: true }).click();
+  await upload(migration);
+  await expect(
+    manager.getByText(/Some sessions from this file were already imported/),
+  ).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Import 0 sessions · 0 tabs', exact: true }),
+  ).toBeDisabled();
+  await manager.getByRole('checkbox', { name: 'Import these sessions again', exact: true }).check();
+  await expect(
+    manager.getByRole('button', { name: 'Import 1 session · 3 tabs', exact: true }),
+  ).toBeEnabled();
+  await manager.getByRole('button', { name: 'Cancel', exact: true }).click();
+  // Restoring an imported session recreates actual Chrome tab groups.
+  await send({ type: 'RESTORE', ids: imported.map((t) => t.id), remove: false, newWindow: true });
+  expect((await waitDone()).failed).toBe(0);
+  const restoredGroup = await worker.evaluate(async () => {
+    const groups = await chrome.tabGroups.query({ title: 'Migration group' });
+    const group = groups[0];
+    return { group, tabs: await chrome.tabs.query({ groupId: group.id }) };
+  });
+  expect(restoredGroup.group.color).toBe('purple');
+  expect(restoredGroup.tabs).toHaveLength(2);
+  await worker.evaluate((id) => chrome.windows.remove(id), restoredGroup.group.windowId);
+  await manager.bringToFront();
+  await manager.getByRole('button', { name: 'Settings', exact: true }).click();
+  const downloaded = manager.waitForEvent('download');
+  await manager.getByRole('button', { name: /Export a URL backup/ }).click();
+  const nativeBackup = JSON.parse(readFileSync(await (await downloaded).path(), 'utf8'));
+  expect(nativeBackup.format).toBe('tabs-aside-done-right');
+  expect(nativeBackup.includesScreenshots).toBe(false);
+  expect(nativeBackup.tabs.every((t) => !('sourceTabId' in t) && !('preview' in t))).toBe(true);
+  await manager.getByRole('button', { name: 'Done', exact: true }).click();
+  await manager.getByRole('button', { name: 'Import sessions', exact: true }).click();
+  await upload(nativeBackup);
+  await expect(
+    manager.getByRole('dialog').getByText('Tabs Aside Done Right', { exact: true }),
+  ).toBeVisible();
+  await manager.getByRole('button', { name: 'Import 1 session · 3 tabs', exact: true }).click();
+  await expect(manager.locator('dialog')).toHaveCount(0);
+  expect(await read('sessions')).toHaveLength(2);
+  expect(new Set((await read('tabs')).map((t) => t.id)).size).toBe(6);
+  await manager.getByRole('button', { name: 'Import sessions', exact: true }).click();
+  await upload({
+    version: '1.0',
+    exportedAt: new Date().toISOString(),
+    sessions: [
+      {
+        id: 'external-a',
+        name: 'Choose work',
+        createdAt: 1700000000000,
+        tabs: [{ title: 'Work', url: `${base}/work`, pinned: true, windowId: 1, index: 0 }],
+      },
+      {
+        id: 'external-b',
+        name: 'Skip personal',
+        createdAt: 1700000000001,
+        tabs: [{ title: 'Personal', url: `${base}/personal` }],
+      },
+    ],
+  });
+  await expect(manager.getByText('Tab Session Manager', { exact: true })).toBeVisible();
+  await manager.getByRole('checkbox', { name: 'Import Skip personal', exact: true }).uncheck();
+  await manager.getByRole('button', { name: 'Import 1 session · 1 tab', exact: true }).click();
+  await expect(manager.locator('dialog')).toHaveCount(0);
+  expect(await read('sessions')).toHaveLength(3);
+  expect((await read('tabs')).find((t) => t.title === 'Work').pinned).toBe(true);
+  expect((await read('tabs')).some((t) => t.title === 'Personal')).toBe(false);
+  await send({ type: 'CLEAR' });
+  expect(await read('imports')).toHaveLength(0);
 
   // A 1,000-tab collection stays searchable without mounting every card or image.
   await manager.evaluate(

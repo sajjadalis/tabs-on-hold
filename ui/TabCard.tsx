@@ -70,7 +70,7 @@ export function TabCard({
   return (
     <article
       ref={ref}
-      className={`tab-card ${list ? 'list-card' : ''} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`}
+      className={`tab-card ${list ? 'list-card' : ''} ${tab.preview !== 'ready' && tab.preview !== 'pending' ? 'without-preview' : ''} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`}
       draggable={Boolean(onDragStart) && !disabled}
       onDragStart={(event) => {
         if ((event.target as HTMLElement).closest('details,input')) {
@@ -81,7 +81,7 @@ export function TabCard({
       }}
       onDragEnd={onDragEnd}
     >
-      {!list && (
+      {!list && (tab.preview === 'ready' || tab.preview === 'pending') && (
         <div className="card-preview">
           <button
             className="preview-hit"

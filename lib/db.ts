@@ -1,11 +1,19 @@
 import Dexie, { type Table } from 'dexie';
-import { orderSessionTabs, type Job, type SavedTab, type Screenshot, type Session } from './model';
+import {
+  orderSessionTabs,
+  type ImportReceipt,
+  type Job,
+  type SavedTab,
+  type Screenshot,
+  type Session,
+} from './model';
 
 export class AsideDatabase extends Dexie {
   sessions!: Table<Session, string>;
   tabs!: Table<SavedTab, string>;
   screenshots!: Table<Screenshot, string>;
   jobs!: Table<Job, string>;
+  imports!: Table<ImportReceipt, string>;
 
   constructor(name = 'tabs-aside-done-right') {
     super(name);
@@ -15,6 +23,7 @@ export class AsideDatabase extends Dexie {
       screenshots: 'tabId',
       jobs: 'id',
     });
+    this.version(2).stores({ imports: 'id' });
   }
 }
 
@@ -87,11 +96,13 @@ export async function clearLibrary(database = db): Promise<void> {
     database.tabs,
     database.screenshots,
     database.jobs,
+    database.imports,
     async () => {
       await database.screenshots.clear();
       await database.tabs.clear();
       await database.sessions.clear();
       await database.jobs.clear();
+      await database.imports.clear();
     },
   );
 }

@@ -32,13 +32,23 @@ Move saved tabs between existing sessions in either of two ways:
 
 Moves append tabs in their existing relative order and preserve their URLs, titles, capture dates, favorites, groups, and screenshot IDs. They do not open, close, or recapture browser tabs. A source session is deleted automatically if moving its last tab empties it; a nonempty source stays. Dropping onto the current session is a no-op. Tab moves, destination ordering, and empty-session cleanup commit in one database transaction. Moving never copies or deletes screenshot blobs. Existing libraries keep their original order until a move assigns a session position; no database reset is needed.
 
-**The two existing JSON exports are preserved, unchanged, in `temp/imports/`. They are not imported, bundled, or uploaded.** Import support is a later task.
+### Import and backup
+
+Choose **Import sessions** in the sidebar or Settings, then select a JSON export from **Tabs Aside Done Right**, **Tabs Aside (XFox111)**, or **Tab Session Manager - Save & Restore Tabs**. The source is detected automatically. Review session dates, tab counts, groups, and warnings; expand a session to inspect its titles and URLs, and select which sessions to add.
+
+Imports add new sessions without replacing existing data or opening any tabs. They preserve supported titles, URLs, dates, order, favorites, pinned/muted state, and groups when present in the source. Unsupported addresses are skipped with a warning. Missing collection names use their original date. Duplicate URLs are preserved because the same page can belong to multiple sessions. A record of previously imported sessions prevents accidental repeat imports of the same JSON file; **Import these sessions again** explicitly allows another copy. Clearing the library also clears this import history.
+
+Imported tabs have no screenshots and display compact cards without an image area or placeholder. Restore a session, then set it aside with preview capture enabled to take screenshots. Group names, colors, and membership stay internal and are recreated in Chrome on restore. Tabs Aside exports do not contain collapsed state, so imported groups default to expanded. The supplied Tab Session Manager export has no group metadata.
+
+**Export a URL backup** creates our version 1 JSON format with portable session/tab metadata, including favorites and groups. Screenshot availability, live browser tab IDs, capture errors, settings, and images are excluded. Legacy native exports are also accepted. See [the backup format](docs/backup-format.md). Imports are limited to 25 MB, 10,000 sessions, and 100,000 tab entries per file. Writes and repeat-import tracking commit in one transaction; a storage failure rolls the entire import back.
+
+**The two supplied migration exports remain unchanged in ignored `_data/imports/`. They are not bundled or uploaded.**
 
 ## Included
 
 - Current-window, selected-tabs, current-tab, and all-normal-windows capture scopes.
 - Fresh, compressed WebP viewport previews of loaded tabs, enabled by default.
-- Sleeping/discarded/frozen tabs are saved without waking them and show a placeholder by default. Optional **Capture previews for sleeping tabs** loads them for screenshots, with a 15-second load limit per tab.
+- Sleeping/discarded/frozen tabs are saved without waking them and use compact cards without an image area. Optional **Capture previews for sleeping tabs** loads them for screenshots, with a 15-second load limit per tab.
 - Three image quality presets, preserving the complete captured aspect ratio.
 - Save a copy without closing source tabs.
 - Pinned tabs excluded by default; incognito and internal pages excluded.
@@ -54,12 +64,12 @@ Moves append tabs in their existing relative order and preserve their URLs, titl
 - A visible **Remove saved items after restoring** toggle, enabled by default.
 - Restore original order, pinned/muted state, and groups where supported.
 - Permanent tab/session deletion, preview-only deletion, and clear-library controls.
-- Local image storage usage, light/dark/system themes, and URL-only backup export.
+- Local image storage usage, light/dark/system themes, native JSON backup/import, and migration imports from Tabs Aside and Tab Session Manager.
 - Persistent operation progress, cancellation, and interrupted-operation reporting.
 
 ## What saving guarantees
 
-The URL inventory is committed to IndexedDB before any tab closes. With screenshots enabled, loaded tabs close only after their compressed images are committed. By default, sleeping tabs intentionally skip capture: their saved URL commits before closing, and their cards show a placeholder. A failed screenshot or load timeout leaves the source open and retains the saved URL with an explanation.
+The URL inventory is committed to IndexedDB before any tab closes. With screenshots enabled, loaded tabs close only after their compressed images are committed. By default, sleeping tabs intentionally skip capture: their saved URL commits before closing, and their cards have no image area. A failed screenshot or load timeout leaves the source open and retains the saved URL with an explanation.
 
 Chrome captures the active tab in a window. Fresh capture activates eligible tabs sequentially, waits briefly for rendering, checks that the active tab and URL still match, and respects capture rate limits. Pages can change when activated; these are best-effort snapshots at capture time, not simultaneous snapshots at button-press time.
 
@@ -82,11 +92,11 @@ Preview images load only near the viewport, temporary object URLs are revoked, a
 ## Limits to know
 
 - Restoring opens URLs. It does not restore page history, unsaved forms, authentication, scroll position, fullscreen mode, or playback position.
-- Sleeping tabs get placeholders without being activated by default. Enable **Capture previews for sleeping tabs** to load them one at a time. This can take longer and use more memory/network data; a 15-second load timeout leaves that source tab open with a saved URL and a failed-preview placeholder.
+- Sleeping tabs have no screenshot area and are not activated by default. Enable **Capture previews for sleeping tabs** to load them one at a time. This can take longer and use more memory/network data; a 15-second load timeout leaves that source tab open with a saved URL and a capture-error indicator.
 - Protected video, browser policies, and particular page/window states may prevent useful screenshots. A successful screenshot call can still contain a black or incomplete video region.
 - Local file previews also require Chrome's **Allow access to file URLs** extension setting.
 - Multiple source windows are represented in the saved order; restoring into one target window does not recreate the original multi-window geometry.
-- URL backup export excludes images. Import of these backups and the two historical exports is not implemented yet.
+- JSON backups and migration imports exclude screenshots. They preserve saved window ordering but do not recreate original multi-window geometry. Group restoration failures are reported without reopening already restored tabs.
 - Uninstalling the extension removes its local database. Export important URLs first.
 
 ## Development
@@ -113,7 +123,7 @@ npm.cmd run build
 npm.cmd run test:browser
 ```
 
-The smoke test launches an isolated Chromium profile in `.cache`, opens local fixture websites (including a playing video), captures actual screenshots, checks image formats and video pixels, tests library interactions, restores with and without removal, checks partial failures, and verifies complete deletion. It also exercises a 1,000-tab metadata collection. It never opens or modifies your normal browser profile or imports your existing JSON files.
+The smoke test launches an isolated Chromium profile in `.cache`, opens local fixture websites (including a playing video), captures actual screenshots, checks image formats and video pixels, tests library interactions, restores with and without removal, checks partial failures, and verifies complete deletion. It also tests all three import formats with synthetic exports, repeat-import detection, selection, native backup round trips, compact screenshot-free cards, actual Chrome group restoration, and a 1,000-tab metadata collection. It never opens or modifies your normal browser profile or imports your existing JSON files.
 
 For unattended capture tests only, the script copies the built extension into `.cache` and grants website access in that throwaway copy's manifest. The production manifest keeps website access optional. Screenshots of the interface are written to `artifacts/`.
 

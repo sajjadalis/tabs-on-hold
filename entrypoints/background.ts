@@ -459,8 +459,11 @@ export default defineBackground(() => {
                 color: tab.group.color,
                 collapsed: tab.group.collapsed,
               });
-            } catch {
-              /* Group failure never causes an already opened tab to be opened twice. */
+            } catch (error) {
+              // The tab is already open: report grouping separately without opening it twice.
+              issues.push(
+                `${tab.title}: Opened, but its group could not be restored. ${errorMessage(error)}`,
+              );
             }
           }
           if (message.remove) await deleteTabs([tab.id]);

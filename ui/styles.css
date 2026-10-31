@@ -1164,6 +1164,21 @@ kbd {
   align-items: flex-start;
   padding: 14px 12px 10px;
 }
+.without-preview:not(.list-card) {
+  align-self: start;
+}
+.without-preview:not(.list-card) .card-select {
+  top: 12px;
+  left: 10px;
+  right: auto;
+  opacity: 1;
+}
+.without-preview:not(.list-card) .tab-drag-handle {
+  top: 45px;
+}
+.without-preview:not(.list-card) .card-body {
+  padding-left: 42px;
+}
 .site-icon {
   width: 25px;
   height: 25px;
@@ -1607,6 +1622,81 @@ kbd {
 }
 .dialog-error {
   margin-bottom: 16px;
+}
+.import-content {
+  display: grid;
+  gap: 16px;
+  font-size: 14px;
+}
+.import-file {
+  display: grid;
+  gap: 10px;
+}
+.import-file input {
+  max-width: 100%;
+}
+.import-content small,
+.import-explanation {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.import-warnings,
+.import-repeat {
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--subtle);
+  line-height: 1.6;
+}
+.import-warnings {
+  padding-left: 30px;
+}
+.import-repeat label,
+.import-select-all {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+.import-repeat label {
+  margin-top: 10px;
+}
+.import-sessions {
+  max-height: 38vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.import-session {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+}
+.import-session + .import-session {
+  border-top: 1px solid var(--line);
+}
+.import-session > input {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.import-session details {
+  min-width: 0;
+  flex: 1;
+}
+.import-session summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.import-session small {
+  display: block;
+}
+.import-session ul {
+  margin-top: 10px;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+.import-session li + li {
+  margin-top: 8px;
 }
 .dialog form > input {
   width: 100%;

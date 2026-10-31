@@ -1,0 +1,8 @@
+node_modules/
+.cache/
+.wxt/
+.output/
+temp/
+artifacts/
+test-results/
+_data/

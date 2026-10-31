@@ -1,0 +1,7 @@
+node_modules/
+.cache/
+.wxt/
+.output/
+temp/
+artifacts/
+package-lock.json

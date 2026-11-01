@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitepress';
 import { APP_VERSION } from '../../lib/version';
 
-const base = '/tabs-on-hold/';
+const base = '/';
 const repository = 'https://github.com/sajjadalis/tabs-on-hold';
 const description = 'Save and organize tabs with screenshot previews and easy restore.';
 
@@ -12,6 +12,7 @@ export default defineConfig({
   lang: 'en-US',
   base,
   cleanUrls: true,
+  sitemap: { hostname: 'https://tabsonhold.intentdeep.com' },
   outDir: fileURLToPath(new URL('../../.output/docs', import.meta.url)),
   cacheDir: fileURLToPath(new URL('../../.cache/vitepress', import.meta.url)),
   head: [

@@ -79,7 +79,7 @@ Change browser shortcuts at `chrome://extensions/shortcuts`.
 
 Built with React, TypeScript, WXT, and Dexie. See [Development](docs/development.md) for setup, tests, and packaging.
 
-The documentation website includes a [getting started guide](docs/guide.md), [backup instructions](docs/backups.md), [privacy policy](docs/privacy.md), and [help](docs/support.md). See [website development](docs/development.md#documentation-website) to preview or build it locally.
+The [documentation website](https://tabsonhold.intentdeep.com/) includes a [getting started guide](docs/guide.md), [backup instructions](docs/backups.md), [privacy policy](docs/privacy.md), and [help](docs/support.md). See [website development](docs/development.md#documentation-website) to preview or build it locally.
 
 ## Contributing
 

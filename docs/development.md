@@ -76,15 +76,17 @@ npm run docs:build
 npm run docs:preview
 ```
 
-Development uses `http://127.0.0.1:4175/tabs-on-hold/`; production preview uses `http://localhost:4176/tabs-on-hold/`. The production build is written to `.output/docs` and its cache to `.cache/vitepress`. The build checks internal Markdown links.
+Development uses `http://127.0.0.1:4175/`; production preview uses `http://localhost:4176/`. The production build is written to `.output/docs` and its cache to `.cache/vitepress`. The build checks internal Markdown links.
 
 The homepage uses a 40-second rainbow accent cycle inspired by Foldergram. Documentation pages keep the sage accent. The animation stops when the browser requests reduced motion. Website version labels use `lib/version.ts`, which reads `package.json`.
 
 ### GitHub Pages
 
-The `Documentation` workflow builds documentation on pull requests and deploys pushes to `main` or manual runs. In the repository’s **Settings → Pages**, select **GitHub Actions** as the build source before the first deployment.
+The `Documentation` workflow builds documentation on pull requests and deploys changes to `docs/`, the package files, `lib/version.ts`, or the workflow itself when pushed to `main`. It can also be run manually. The repository uses **GitHub Actions** as its Pages build source.
 
-The site uses `/tabs-on-hold/` as its base path. After deployment, its homepage is `https://sajjadalis.github.io/tabs-on-hold/` and its privacy page is `https://sajjadalis.github.io/tabs-on-hold/privacy`. Use the deployed privacy URL in the Chrome Web Store dashboard.
+The site uses `/` as its base path and is served at `https://tabsonhold.intentdeep.com/`. Its privacy page is `https://tabsonhold.intentdeep.com/privacy`; use this public URL in the Chrome Web Store dashboard.
+
+The custom domain is set in the repository’s Pages settings. Its DNS record is a **CNAME** named `tabsonhold` in the `intentdeep.com` zone, pointing to `sajjadalis.github.io`. Use DNS-only mode if the DNS provider offers proxying. GitHub can issue the HTTPS certificate after this record resolves correctly; enable **Enforce HTTPS** once the certificate is available.
 
 The homepage and README share `docs/public/images/tabs-on-hold-promo.png`. Keep public images free of personal tabs and data. Website assets belong under `docs/public/` so they are not bundled with the extension.
 

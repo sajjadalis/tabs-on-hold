@@ -76,3 +76,7 @@ Change browser shortcuts at `chrome://extensions/shortcuts`.
 ## Development
 
 Built with React, TypeScript, WXT, and Dexie. See [Development](docs/development.md) for setup, tests, and packaging.
+
+## License
+
+Licensed under the [MIT License](LICENSE).

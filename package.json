@@ -1,7 +1,16 @@
 {
   "name": "tabs-on-hold",
   "description": "Save and organize tabs with screenshot previews and easy restore.",
-  "version": "0.1.6",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sajjadalis/tabs-on-hold.git"
+  },
+  "homepage": "https://github.com/sajjadalis/tabs-on-hold#readme",
+  "bugs": {
+    "url": "https://github.com/sajjadalis/tabs-on-hold/issues"
+  },
   "private": true,
   "type": "module",
   "scripts": {

@@ -68,23 +68,7 @@ export function useDismissibleMenus() {
 export function BrandMark({ small = false }: { small?: boolean }) {
   return (
     <span className={`brand-mark ${small ? 'small' : ''}`} aria-hidden="true">
-      <svg viewBox="0 0 32 32" fill="none">
-        <rect x="7" y="5" width="18" height="21" rx="4" stroke="currentColor" strokeWidth="2" />
-        <path
-          d="M12 5v5h8V5M12 17h8m-4-4v8m-3-3 3 3 3-3"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M4 11v13a5 5 0 0 0 5 5h12"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          opacity=".5"
-        />
-      </svg>
+      <img src="/icon/128.png" alt="" draggable={false} />
     </span>
   );
 }

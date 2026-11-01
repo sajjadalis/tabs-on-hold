@@ -69,6 +69,7 @@ export interface Settings {
   theme: 'light' | 'dark' | 'system';
   cardImageFit: 'cover' | 'contain';
   sessionTabLimit: 0 | 12 | 24 | 48 | 100;
+  tabClickAction: 'preview' | 'open' | 'restore';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -81,6 +82,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   cardImageFit: 'cover',
   sessionTabLimit: 0,
+  tabClickAction: 'preview',
 };
 
 export type Scope = 'window' | 'selected' | 'current' | 'all';

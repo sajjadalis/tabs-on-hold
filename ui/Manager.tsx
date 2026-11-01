@@ -61,6 +61,13 @@ type ConfirmAction = {
   label: string;
   action: () => Promise<void>;
 };
+type DropTarget = {
+  sessionId: string;
+  beforeId: string | null;
+  anchorId: string | null;
+  edge: 'before' | 'after';
+  self: boolean;
+};
 const plural = (count: number, noun: string) =>
   `${count.toLocaleString()} ${noun}${count === 1 ? '' : 's'}`;
 const TAB_DRAG_TYPE = 'application/x-tabs-aside-tab-ids';
@@ -145,7 +152,7 @@ export function Manager() {
   const [moveIds, setMoveIds] = useState<string[]>([]);
   const [destinationId, setDestinationId] = useState('');
   const [draggingIds, setDraggingIds] = useState<string[]>([]);
-  const [dropSession, setDropSession] = useState<string>();
+  const [dropTarget, setDropTarget] = useState<DropTarget>();
   const searchRef = useRef<HTMLInputElement>(null);
   const busy = pending || job?.status === 'running';
   const sessions = data?.sessions ?? [];
@@ -262,16 +269,32 @@ export function Manager() {
     void run(() => db.tabs.update(tab.id, { favorite: !tab.favorite }));
   const openTab = (id: string) =>
     void run(() => request({ type: 'OPEN', id }), 'Opened in a new tab. Saved copy kept.');
+  const activateTab = (tab: SavedTab) => {
+    if (settings.tabClickAction === 'open') return openTab(tab.id);
+    if (settings.tabClickAction === 'restore') return restore([tab.id]);
+    if (tab.preview === 'ready') return setPreview(tab);
+    openTab(tab.id);
+  };
   const openMove = (ids: string[]) => {
     setError('');
     setDestinationId('');
     setMoveIds([...new Set(ids)]);
   };
-  const move = (ids: string[], target: string) =>
+  const move = (ids: string[], target: string, beforeId?: string | null) =>
     void run(async () => {
+      const sameSession = tabs
+        .filter((tab) => ids.includes(tab.id))
+        .every((tab) => tab.sessionId === target);
       const moved = inExtension
-        ? (await request<{ moved: number }>({ type: 'MOVE', ids, destinationId: target })).moved
-        : await moveTabs(ids, target);
+        ? (
+            await request<{ moved: number }>({
+              type: 'MOVE',
+              ids,
+              destinationId: target,
+              beforeId,
+            })
+          ).moved
+        : await moveTabs(ids, target, db, beforeId);
       setSelected(new Set());
       setMoveIds([]);
       setCollapsed((current) => {
@@ -281,9 +304,13 @@ export function Manager() {
       });
       const name = sessions.find((session) => session.id === target)?.name || 'the chosen session';
       setNotice(
-        moved
-          ? `Moved ${plural(moved, 'tab')} to ${name}.`
-          : 'Those tabs are already in that session.',
+        !moved
+          ? sameSession
+            ? 'Those tabs are already in that order.'
+            : 'Those tabs are already in that session.'
+          : sameSession
+            ? `Reordered ${plural(moved, 'tab')} in ${name}.`
+            : `Moved ${plural(moved, 'tab')} to ${name}.`,
       );
     });
   const startDrag = (event: DragEvent<HTMLElement>, tab: SavedTab) => {
@@ -294,13 +321,71 @@ export function Manager() {
   };
   const endDrag = () => {
     setDraggingIds([]);
-    setDropSession(undefined);
+    setDropTarget(undefined);
+  };
+  const dropPosition = (event: DragEvent<HTMLElement>, sessionId: string): DropTarget => {
+    const append: DropTarget = {
+      sessionId,
+      beforeId: null,
+      anchorId: null,
+      edge: 'after',
+      self: false,
+    };
+    const container = (event.target as Element).closest<HTMLElement>('.tab-grid, .tab-list');
+    if (!container) return append;
+    const cards = [
+      ...event.currentTarget.querySelectorAll<HTMLElement>('.tab-card[data-tab-id]'),
+    ].filter((card) => !draggingIds.includes(card.dataset.tabId || ''));
+    if (!cards.length) return append;
+    const hovered = (event.target as Element).closest<HTMLElement>('.tab-card[data-tab-id]');
+    if (hovered && draggingIds.includes(hovered.dataset.tabId || ''))
+      return { ...append, self: true };
+    let anchor = hovered && cards.includes(hovered) ? hovered : undefined;
+    if (!anchor) {
+      let nearest = cards[0];
+      let distance = Infinity;
+      for (const card of cards) {
+        const box = card.getBoundingClientRect();
+        const dx = event.clientX - (box.left + box.width / 2);
+        const dy = event.clientY - (box.top + box.height / 2);
+        const next = dx * dx + dy * dy;
+        if (next < distance) {
+          nearest = card;
+          distance = next;
+        }
+      }
+      anchor = nearest;
+    }
+    const box = anchor.getBoundingClientRect();
+    const columns = container.classList.contains('tab-grid')
+      ? getComputedStyle(container).gridTemplateColumns.trim().split(/\s+/).length
+      : 1;
+    const after =
+      columns > 1
+        ? event.clientX >= box.left + box.width / 2
+        : event.clientY >= box.top + box.height / 2;
+    const index = cards.indexOf(anchor);
+    return {
+      sessionId,
+      beforeId: after ? (cards[index + 1]?.dataset.tabId ?? null) : (anchor.dataset.tabId ?? null),
+      anchorId: anchor.dataset.tabId ?? null,
+      edge: after ? 'after' : 'before',
+      self: false,
+    };
   };
   const dragOver = (event: DragEvent<HTMLElement>, sessionId: string) => {
     if (busy || !event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    setDropSession(sessionId);
+    const next = dropPosition(event, sessionId);
+    setDropTarget((current) =>
+      current?.sessionId === next.sessionId &&
+      current?.anchorId === next.anchorId &&
+      current?.edge === next.edge &&
+      current?.self === next.self
+        ? current
+        : next,
+    );
   };
   const drop = (event: DragEvent<HTMLElement>, sessionId: string) => {
     if (busy || !event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
@@ -310,7 +395,12 @@ export function Manager() {
       const ids: unknown = JSON.parse(event.dataTransfer.getData(TAB_DRAG_TYPE));
       if (!Array.isArray(ids) || !ids.length || !ids.every((id) => typeof id === 'string'))
         throw new Error('This is not a saved-tab drag.');
-      move(ids, sessionId);
+      const position = dropPosition(event, sessionId);
+      if (position.self) {
+        endDrag();
+        return;
+      }
+      move(ids, sessionId, position.anchorId === null ? undefined : position.beforeId);
     } catch (error) {
       setError(messageOf(error));
     }
@@ -338,7 +428,7 @@ export function Manager() {
     );
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `tabs-aside-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = `tabs-on-hold-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     setNotice('URL backup exported. Screenshots are not included.');
@@ -364,6 +454,7 @@ export function Manager() {
               disabled={Boolean(busy)}
               selected={selected.has(tab.id)}
               onSelect={() => select(tab.id)}
+              onActivate={() => activateTab(tab)}
               onRestore={() => restore([tab.id])}
               onOpen={() => openTab(tab.id)}
               onDelete={() => remove([tab.id])}
@@ -371,13 +462,11 @@ export function Manager() {
               onPreview={() => setPreview(tab)}
               onMove={() => openMove([tab.id])}
               canMove={sessions.length > 1}
-              onDragStart={
-                view === 'sessions' && sessions.length > 1
-                  ? (event) => startDrag(event, tab)
-                  : undefined
-              }
+              onDragStart={view === 'sessions' ? (event) => startDrag(event, tab) : undefined}
               onDragEnd={endDrag}
               dragging={draggingIds.includes(tab.id)}
+              dropBefore={dropTarget?.anchorId === tab.id && dropTarget.edge === 'before'}
+              dropAfter={dropTarget?.anchorId === tab.id && dropTarget.edge === 'after'}
               sessionName={
                 view !== 'sessions'
                   ? sessions.find((session) => session.id === tab.sessionId)?.name
@@ -425,8 +514,8 @@ export function Manager() {
         >
           <BrandMark />
           <span>
-            <strong>Tabs Aside</strong>
-            <small>DONE RIGHT</small>
+            <strong>Tabs on Hold</strong>
+            <small>SAVE FOR LATER</small>
           </span>
         </a>
         <div className="workspace-label">
@@ -632,17 +721,6 @@ export function Manager() {
               )}
             </div>
             <div className="toolbar-actions">
-              <button
-                className={
-                  'secondary-button filter-button ' +
-                  (filtersOpen || activeFilters ? 'pressed' : '')
-                }
-                aria-expanded={filtersOpen}
-                onClick={() => setFiltersOpen(!filtersOpen)}
-              >
-                <SlidersHorizontal size={17} />
-                Filters{activeFilters && <span className="filter-dot" />}
-              </button>
               <div className="sort-control">
                 <ArrowDownWideNarrow size={16} />
                 <select
@@ -666,6 +744,17 @@ export function Manager() {
                   </button>
                 )}
               </div>
+              <button
+                className={
+                  'secondary-button filter-button ' +
+                  (filtersOpen || activeFilters ? 'pressed' : '')
+                }
+                aria-expanded={filtersOpen}
+                onClick={() => setFiltersOpen(!filtersOpen)}
+              >
+                <SlidersHorizontal size={17} />
+                Filters{activeFilters && <span className="filter-dot" />}
+              </button>
               <div className="view-switch" aria-label="Display layout">
                 <button
                   className={layout === 'cards' ? 'active' : ''}
@@ -845,7 +934,7 @@ export function Manager() {
               ) : (
                 view !== 'favorites' && (
                   <p className="empty-start-hint">
-                    Use the Tabs Aside toolbar button to save your first session.
+                    Use the Tabs on Hold toolbar button to save your first session.
                   </p>
                 )
               )}
@@ -869,21 +958,27 @@ export function Manager() {
               {groups.map(({ session, tabs: matching }) => {
                 const all = tabs.filter((tab) => tab.sessionId === session.id);
                 const isCollapsed = collapsed.has(session.id);
+                const isAppendTarget =
+                  dropTarget?.sessionId === session.id &&
+                  dropTarget.anchorId === null &&
+                  !dropTarget.self;
                 return (
                   <section
-                    className={`session ${dropSession === session.id ? 'drop-target' : ''}`}
+                    className={`session ${isAppendTarget ? 'drop-target' : ''}`}
                     key={session.id}
                     aria-label={session.name}
                     onDragOver={(event) => dragOver(event, session.id)}
                     onDragLeave={(event) => {
                       if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                        setDropSession((current) => (current === session.id ? undefined : current));
+                        setDropTarget((current) =>
+                          current?.sessionId === session.id ? undefined : current,
+                        );
                     }}
                     onDrop={(event) => drop(event, session.id)}
                   >
-                    {dropSession === session.id && (
+                    {isAppendTarget && (
                       <span className="session-drop-label" aria-hidden="true">
-                        Drop here to move{' '}
+                        Drop to place{' '}
                         {draggingIds.length > 1 ? `${draggingIds.length} tabs` : 'tab'}
                       </span>
                     )}
@@ -1300,6 +1395,28 @@ export function Manager() {
             </label>
             <label className="setting-row">
               <span>
+                <strong>Clicking a saved tab</strong>
+                <small>
+                  Preview shows the screenshot when available, otherwise opens the tab. Open keeps
+                  the saved copy; Restore follows the removal setting above.
+                </small>
+              </span>
+              <select
+                aria-label="Clicking a saved tab"
+                value={settings.tabClickAction}
+                onChange={(event) =>
+                  void updateSettings({
+                    tabClickAction: event.target.value as typeof settings.tabClickAction,
+                  })
+                }
+              >
+                <option value="preview">Preview</option>
+                <option value="open">Open</option>
+                <option value="restore">Restore</option>
+              </select>
+            </label>
+            <label className="setting-row">
+              <span>
                 <strong>Appearance</strong>
                 <small>A space that feels like yours.</small>
               </span>
@@ -1446,7 +1563,7 @@ export function Manager() {
             </button>
           </div>
           <div className="dialog-footer">
-            <span className="settings-version">Tabs Aside Done Right · v0.1.6</span>
+            <span className="settings-version">Tabs on Hold · v0.1.6</span>
             <button className="primary-button" onClick={() => setSettingsOpen(false)}>
               Done
             </button>

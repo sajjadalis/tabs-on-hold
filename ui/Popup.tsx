@@ -22,8 +22,8 @@ export function Popup() {
       <header className="popup-brand">
         <BrandMark small />
         <div>
-          <strong>Tabs Aside</strong>
-          <span>DONE RIGHT</span>
+          <strong>Tabs on Hold</strong>
+          <span>SAVE FOR LATER</span>
         </div>
         <span className="version-pill">v0.1.6</span>
       </header>

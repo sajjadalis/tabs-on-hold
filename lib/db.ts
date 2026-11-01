@@ -15,6 +15,7 @@ export class AsideDatabase extends Dexie {
   jobs!: Table<Job, string>;
   imports!: Table<ImportReceipt, string>;
 
+  // Keep the original storage name so the rename preserves existing libraries.
   constructor(name = 'tabs-aside-done-right') {
     super(name);
     this.version(1).stores({
@@ -33,6 +34,7 @@ export async function moveTabs(
   ids: string[],
   destinationId: string,
   database = db,
+  beforeId?: string | null,
 ): Promise<number> {
   return database.transaction('rw', database.sessions, database.tabs, async () => {
     if (!(await database.sessions.get(destinationId)))
@@ -41,30 +43,46 @@ export async function moveTabs(
     const records = await database.tabs.bulkGet(unique);
     if (records.some((tab) => !tab))
       throw new Error('Some selected tabs were removed. Refresh your selection and try again.');
-    const moving = (records as SavedTab[]).filter((tab) => tab.sessionId !== destinationId);
-    if (!moving.length) return 0;
-    const existing = orderSessionTabs(
+    const selected = records as SavedTab[];
+    const destination = orderSessionTabs(
       await database.tabs.where('sessionId').equals(destinationId).toArray(),
     );
-    // Give the whole destination a stable order, independent of its source monitors/windows.
-    for (const [position, tab] of existing.entries())
-      await database.tabs.update(tab.id, { position });
+    // Undefined means a session-header/menu move; null explicitly targets the
+    // end of the session and must also reorder tabs already in the destination.
+    const moving =
+      beforeId === undefined ? selected.filter((tab) => tab.sessionId !== destinationId) : selected;
+    if (!moving.length) return 0;
+    const movingIds = new Set(moving.map((tab) => tab.id));
+    if (
+      beforeId != null &&
+      (movingIds.has(beforeId) || !destination.some((tab) => tab.id === beforeId))
+    )
+      throw new Error('That position is no longer available.');
     const sourceIds = [...new Set(moving.map((tab) => tab.sessionId))];
     const ordered = sourceIds.flatMap((id) =>
       orderSessionTabs(moving.filter((tab) => tab.sessionId === id)),
     );
-    for (const [offset, tab] of ordered.entries()) {
+    const stationary = destination.filter((tab) => !movingIds.has(tab.id));
+    const insertAt =
+      beforeId == null ? stationary.length : stationary.findIndex((tab) => tab.id === beforeId);
+    if (beforeId != null && insertAt < 0) throw new Error('That position is no longer available.');
+    const final = [...stationary.slice(0, insertAt), ...ordered, ...stationary.slice(insertAt)];
+    const targetPositions = new Map(final.map((tab, position) => [tab.id, position]));
+    const moved = moving.filter(
+      (tab) => tab.sessionId !== destinationId || tab.position !== targetPositions.get(tab.id),
+    ).length;
+    // Give the whole destination a stable order, independent of its source monitors/windows.
+    for (const [position, tab] of final.entries())
       await database.tabs.update(tab.id, {
-        sessionId: destinationId,
-        position: existing.length + offset,
+        ...(tab.sessionId !== destinationId ? { sessionId: destinationId } : {}),
+        position,
       });
-    }
     for (const id of sourceIds) {
-      if (!(await database.tabs.where('sessionId').equals(id).count()))
+      if (id !== destinationId && !(await database.tabs.where('sessionId').equals(id).count()))
         await database.sessions.delete(id);
     }
     // Screenshot keys remain tab IDs: moving never copies or removes image blobs.
-    return moving.length;
+    return moved;
   });
 }
 

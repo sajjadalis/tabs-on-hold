@@ -110,12 +110,12 @@ export async function inspectImport(contents: string, now = Date.now()): Promise
     };
   };
   let source: string;
-  if (root.format === 'tabs-aside-done-right') {
+  if (root.format === 'tabs-on-hold') {
     if (root.version !== 1)
       throw new Error(
         'This native backup version is not supported. Update the extension before importing it.',
       );
-    source = 'Tabs Aside Done Right';
+    source = 'Tabs on Hold';
     const nativeTabs = array(root.tabs, 'tabs');
     const bySession = new Map<string, RecordValue[]>();
     const tabIds = new Set<string>();
@@ -218,7 +218,7 @@ export async function inspectImport(contents: string, now = Date.now()): Promise
     }
   } else
     throw new Error(
-      'Unrecognized backup. Choose a Tabs Aside Done Right, Tabs Aside, or Tab Session Manager JSON export.',
+      'Unrecognized backup. Choose a Tabs on Hold, Tabs Aside, or Tab Session Manager JSON export.',
     );
   if (sessions.length > 10_000)
     throw new Error('This backup exceeds the 10,000-session import limit.');
@@ -294,7 +294,7 @@ export async function importSessions(
 
 export function createNativeBackup(sessions: Session[], tabs: SavedTab[], now = Date.now()) {
   return {
-    format: 'tabs-aside-done-right',
+    format: 'tabs-on-hold',
     version: 1,
     exportedAt: new Date(now).toISOString(),
     includesScreenshots: false,

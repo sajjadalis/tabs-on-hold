@@ -61,7 +61,7 @@ describe('toolbar window counter', () => {
     await expectBadge(3, '1');
     expect(browser.action.setTitle).toHaveBeenCalledWith({
       tabId: 3,
-      title: 'Tabs Aside · 1 tab in this window',
+      title: 'Tabs on Hold · 1 tab in this window',
     });
     expect(browser.action.setBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#486b3d' });
     expect(browser.action.setBadgeTextColor).toHaveBeenCalledWith({ color: '#ffffff' });
@@ -105,7 +105,7 @@ describe('toolbar window counter', () => {
     await expectBadge(0, '999+');
     expect(browser.action.setTitle).toHaveBeenCalledWith({
       tabId: 0,
-      title: 'Tabs Aside · 1001 tabs in this window',
+      title: 'Tabs on Hold · 1001 tabs in this window',
     });
   });
   it('ignores stale queries even after a newer refresh has finished', async () => {

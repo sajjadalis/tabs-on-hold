@@ -83,7 +83,7 @@ export function ImportDialog({
               if (file) void read(file);
             }}
           />
-          <small>Tabs Aside Done Right, Tabs Aside, or Tab Session Manager · Up to 25 MB</small>
+          <small>Tabs on Hold, Tabs Aside, or Tab Session Manager · Up to 25 MB</small>
         </label>
         {busy && <p role="status">{plan ? 'Importing sessions…' : 'Reading backup…'}</p>}
         {plan && (

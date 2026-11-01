@@ -1,6 +1,6 @@
 {
-  "name": "tabs-aside-done-right",
-  "description": "A local-first visual home for the tabs you want to come back to.",
+  "name": "tabs-on-hold",
+  "description": "Save tabs for later with screenshot previews, organized sessions, and easy restore. Stored privately on your device.",
   "version": "0.1.6",
   "private": true,
   "type": "module",

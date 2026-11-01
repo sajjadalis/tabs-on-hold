@@ -1,12 +1,12 @@
 # Native JSON backup format, version 1
 
-The native format is the primary portable backup contract. Migration adapters translate other extensions' exports into the same session/tab model. IndexedDB's schema version is independent of this file format version.
+The native format is the primary portable backup contract for Tabs on Hold. Migration adapters translate other extensions' exports into the same session/tab model. IndexedDB's schema version is independent of this file format version.
 
 ## Envelope
 
 | Field                 | Value                                       |
 | --------------------- | ------------------------------------------- |
-| `format`              | `"tabs-aside-done-right"`                   |
+| `format`              | `"tabs-on-hold"`                            |
 | `version`             | `1` (number)                                |
 | `exportedAt`          | UTC ISO 8601 string                         |
 | `includesScreenshots` | `false`                                     |

@@ -87,7 +87,7 @@ describe('import formats and validation', () => {
     await expect(inspectImport('{')).rejects.toThrow('not valid JSON');
     await expect(inspectImport('{}')).rejects.toThrow('Unrecognized backup');
     await expect(
-      inspectImport(JSON.stringify({ format: 'tabs-aside-done-right', version: 2 })),
+      inspectImport(JSON.stringify({ format: 'tabs-on-hold', version: 2 })),
     ).rejects.toThrow('version is not supported');
   });
   it('skips unsafe addresses and rejects files without importable tabs', async () => {
@@ -195,9 +195,9 @@ describe('atomic imports and native backups', () => {
         .every((t) => t.preview === 'disabled'),
     ).toBe(true);
   });
-  it('accepts legacy native exports and rejects orphaned or duplicate IDs', async () => {
+  it('accepts native exports and rejects orphaned or duplicate IDs', async () => {
     const native: any = {
-      format: 'tabs-aside-done-right',
+      format: 'tabs-on-hold',
       version: 1,
       sessions: [{ id: 's', name: 'Legacy', createdAt: 1 }],
       tabs: [

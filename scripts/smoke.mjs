@@ -10,6 +10,8 @@ const fixture = path.join(root, '.cache', `smoke-extension-${Date.now()}`);
 mkdirSync(fixture, { recursive: true });
 cpSync(path.join(root, '.output', 'chrome-mv3'), fixture, { recursive: true });
 const manifest = JSON.parse(readFileSync(path.join(fixture, 'manifest.json'), 'utf8'));
+if (manifest.name !== 'Tabs on Hold' || manifest.short_name !== 'Tabs on Hold')
+  throw new Error('Built extension has outdated branding.');
 // Simulate a user who has already granted optional screenshot access.
 // Only the throwaway copy is changed; the shipped manifest keeps access optional.
 manifest.host_permissions = ['<all_urls>'];
@@ -575,6 +577,37 @@ try {
     .toBe('move-destination');
   expect((await read('sessions')).some((session) => session.id === 'move-source')).toBe(false);
   expect((await read('screenshots')).length).toBe(imageCountBeforeMoves);
+  // Explicit end drops reorder the current session; header drops keep its order.
+  const reorderSession = manager.getByRole('region', { name: 'Move destination', exact: true });
+  for (const layout of ['Card', 'List']) {
+    await manager.getByRole('button', { name: `${layout} view`, exact: true }).click();
+    const cards = reorderSession.locator('.tab-card');
+    const originalIds = await cards.evaluateAll((items) => items.map((item) => item.dataset.tabId));
+    const last = cards.last();
+    const box = await last.boundingBox();
+    await cards
+      .first()
+      .locator('.tab-drag-handle')
+      .dragTo(last, {
+        targetPosition:
+          layout === 'Card'
+            ? { x: box.width - 4, y: box.height / 2 }
+            : { x: box.width / 2, y: box.height - 4 },
+      });
+    const expectedIds = [originalIds[1], originalIds[0]];
+    await expect
+      .poll(() => cards.evaluateAll((items) => items.map((item) => item.dataset.tabId)))
+      .toEqual(expectedIds);
+    await cards
+      .first()
+      .locator('.tab-drag-handle')
+      .dragTo(reorderSession.locator('.session-header'));
+    await expect(manager.locator('.toast')).toContainText('Those tabs are already in that order.');
+    expect(await cards.evaluateAll((items) => items.map((item) => item.dataset.tabId))).toEqual(
+      expectedIds,
+    );
+  }
+  await manager.getByRole('button', { name: 'Card view', exact: true }).click();
   const movedCard = manager
     .locator('.tab-card')
     .filter({ has: manager.getByRole('heading', { name: 'Move me by menu', exact: true }) });
@@ -1092,14 +1125,14 @@ try {
   const downloaded = manager.waitForEvent('download');
   await manager.getByRole('button', { name: /Export a URL backup/ }).click();
   const nativeBackup = JSON.parse(readFileSync(await (await downloaded).path(), 'utf8'));
-  expect(nativeBackup.format).toBe('tabs-aside-done-right');
+  expect(nativeBackup.format).toBe('tabs-on-hold');
   expect(nativeBackup.includesScreenshots).toBe(false);
   expect(nativeBackup.tabs.every((t) => !('sourceTabId' in t) && !('preview' in t))).toBe(true);
   await manager.getByRole('button', { name: 'Done', exact: true }).click();
   await manager.getByRole('button', { name: 'Import sessions', exact: true }).click();
   await upload(nativeBackup);
   await expect(
-    manager.getByRole('dialog').getByText('Tabs Aside Done Right', { exact: true }),
+    manager.getByRole('dialog').getByText('Tabs on Hold', { exact: true }),
   ).toBeVisible();
   await manager.getByRole('button', { name: 'Import 1 session · 3 tabs', exact: true }).click();
   await expect(manager.locator('dialog')).toHaveCount(0);

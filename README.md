@@ -1,6 +1,8 @@
-# Tabs Aside Done Right
+# Tabs on Hold
 
-A local-first Chrome extension for setting tabs aside with screenshots of their visible webpage area. Built with React, TypeScript, WXT, and IndexedDB (Dexie).
+Save tabs for later with screenshot previews, organized sessions, and easy restore. Stored privately on your device.
+
+Built with React, TypeScript, WXT, and IndexedDB (Dexie).
 
 ## Try version 0.1.6
 
@@ -9,7 +11,7 @@ The production extension is in **`.output/chrome-mv3`** after building.
 1. Open `chrome://extensions` in Chrome.
 2. Enable **Developer mode**.
 3. Choose **Load unpacked** and select this project's `.output/chrome-mv3` folder.
-4. Pin **Tabs Aside Done Right** to the toolbar.
+4. Pin **Tabs on Hold** to the toolbar.
 5. Open a few ordinary websites, click the extension, and choose **Set N tabs aside**.
 6. Grant optional website access when Chrome asks. This allows fresh previews of multiple tabs.
 
@@ -27,10 +29,10 @@ Card screenshots use a responsive **16:9 frame** so tabs saved on different moni
 
 Move saved tabs between existing sessions in either of two ways:
 
-- In **Sessions** view, drag a card (or its grip) onto another session, including a collapsed session header. Dragging a selected card moves all selected tabs together.
+- In **Sessions** view, drag a tab's grip to reorder it, or drop it onto another session, including a collapsed session header. Dragging a selected tab's grip moves all selected tabs together.
 - Open a tab’s **⋯ → Move to session…** menu, or select several tabs and use **Move to session…** in the selection toolbar. The destination picker supports keyboard navigation and works from Sessions, All tabs, and Favorites.
 
-Moves append tabs in their existing relative order and preserve their URLs, titles, capture dates, favorites, groups, and screenshot IDs. They do not open, close, or recapture browser tabs. A source session is deleted automatically if moving its last tab empties it; a nonempty source stays. Dropping onto the current session is a no-op. Tab moves, destination ordering, and empty-session cleanup commit in one database transaction. Moving never copies or deletes screenshot blobs. Existing libraries keep their original order until a move assigns a session position; no database reset is needed.
+Cross-session moves append tabs in their existing relative order and preserve their URLs, titles, capture dates, favorites, groups, and screenshot IDs. They do not open, close, or recapture browser tabs. Dropping onto a tab positions moved tabs beside it; dropping onto the current session header is a no-op. A source session is deleted automatically if moving its last tab empties it; a nonempty source stays. Tab moves, destination ordering, and empty-session cleanup commit in one database transaction. Moving never copies or deletes screenshot blobs. Existing libraries keep their original order until a move assigns a session position; no database reset is needed.
 
 The toolbar uses a green stacked-tab icon and a matching live badge showing all open tabs in that window, including pinned and internal pages. Counts update on opening, closing, switching, navigation, and moving tabs between windows. Badges above 999 show **999+**; the tooltip always gives the exact count. The [Chrome action API](https://developer.chrome.com/docs/extensions/reference/api/action) supplies the native badge. No additional permissions are needed. Regenerate the PNG sizes with `node scripts/icons.mjs` after editing the icon source.
 
@@ -40,7 +42,7 @@ Each card has an **Open without removing** icon next to its domain, available in
 
 ### Import and backup
 
-Choose **Import sessions** in the sidebar or Settings, then select a JSON export from **Tabs Aside Done Right**, **Tabs Aside (XFox111)**, or **Tab Session Manager - Save & Restore Tabs**. The source is detected automatically. Review session dates, tab counts, groups, and warnings; expand a session to inspect its titles and URLs, and select which sessions to add.
+Choose **Import sessions** in the sidebar or Settings, then select a JSON export from **Tabs on Hold**, **Tabs Aside (XFox111)**, or **Tab Session Manager - Save & Restore Tabs**. The source is detected automatically. Review session dates, tab counts, groups, and warnings; expand a session to inspect its titles and URLs, and select which sessions to add.
 
 Imports add new sessions without replacing existing data or opening any tabs. They preserve supported titles, URLs, dates, order, favorites, pinned/muted state, and groups when present in the source. Unsupported addresses are skipped with a warning. Missing collection names use their original date. Duplicate URLs are preserved because the same page can belong to multiple sessions. A record of previously imported sessions prevents accidental repeat imports of the same JSON file; **Import these sessions again** explicitly allows another copy. Clearing the library also clears this import history.
 
@@ -65,7 +67,8 @@ Imported tabs have no screenshots and display a local placeholder illustration i
 - Website, preview-availability, and saved-date filters.
 - Newest/oldest, title, website, and stable random sorting with reshuffle.
 - Individual, session, and selected-tab restoration.
-- Drag-and-drop and menu-based single/bulk moves between sessions, with automatic empty-session cleanup.
+- Grip-based drag reordering plus menu-based single/bulk moves between sessions, with automatic empty-session cleanup.
+- Configurable row click: Preview (default), Open, or Restore.
 - Restore a complete session into a new window from its Restore button or session menu.
 - A visible **Remove saved items after restoring** toggle, enabled by default.
 - Restore original order, pinned/muted state, and groups where supported.

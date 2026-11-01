@@ -12,12 +12,14 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { SavedTab } from '../lib/model';
+import { inExtension } from '../lib/settings';
 import { usePreview } from './shared';
 
 export function TabCard({
   tab,
   selected,
   onSelect,
+  onActivate,
   onRestore,
   onOpen,
   onDelete,
@@ -31,10 +33,13 @@ export function TabCard({
   onDragStart,
   onDragEnd,
   dragging = false,
+  dropBefore = false,
+  dropAfter = false,
 }: {
   tab: SavedTab;
   selected: boolean;
   onSelect: () => void;
+  onActivate: () => void;
   onRestore: () => void;
   onOpen: () => void;
   onDelete: () => void;
@@ -48,11 +53,14 @@ export function TabCard({
   onDragStart?: (event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   dragging?: boolean;
+  dropBefore?: boolean;
+  dropAfter?: boolean;
 }) {
   const ref = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [visible, setVisible] = useState(false);
   const [failedImage, setFailedImage] = useState<string>();
+  const [failedFavicon, setFailedFavicon] = useState(false);
   useEffect(() => {
     if (list || !ref.current) return;
     const observer = new IntersectionObserver(
@@ -72,17 +80,77 @@ export function TabCard({
     .charAt(0)
     .toUpperCase();
   const hue = [...tab.domain].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 360;
+  const faviconUrl =
+    inExtension && /^https?:/i.test(tab.url)
+      ? chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(tab.url)}&size=32`)
+      : undefined;
+  const stateLabel =
+    tab.closeState === 'changed'
+      ? 'Original page changed'
+      : tab.closeState === 'open'
+        ? 'Source left open'
+        : '';
+  const favoriteControl = (
+    <button
+      className={`icon-button favorite-tab ${tab.favorite ? 'is-favorite' : ''}`}
+      onClick={onFavorite}
+      disabled={disabled}
+      aria-label={`${tab.favorite ? 'Unfavorite' : 'Favorite'} ${tab.title}`}
+    >
+      <Star size={16} fill={tab.favorite ? 'currentColor' : 'none'} />
+    </button>
+  );
+  const menuControl = (
+    <details className="tab-menu" name="saved-tab-actions" ref={menuRef}>
+      <summary
+        aria-label={`Actions for ${tab.title}`}
+        aria-disabled={disabled}
+        onClick={(event) => {
+          if (disabled) event.preventDefault();
+        }}
+      >
+        <MoreHorizontal size={18} />
+      </summary>
+      <div className="tab-menu-panel">
+        <button
+          disabled={disabled || !canMove}
+          title={!canMove ? 'Save another session to create a destination.' : undefined}
+          onClick={() => {
+            menuRef.current?.removeAttribute('open');
+            onMove();
+          }}
+        >
+          <FolderInput size={16} />
+          Move to session…
+        </button>
+        <button
+          className="danger-text"
+          disabled={disabled}
+          onClick={() => {
+            menuRef.current?.removeAttribute('open');
+            onDelete();
+          }}
+        >
+          <Trash2 size={16} />
+          Delete saved tab
+        </button>
+      </div>
+    </details>
+  );
   return (
     <article
       ref={ref}
-      className={`tab-card ${list ? 'list-card' : ''} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`}
-      draggable={Boolean(onDragStart) && !disabled}
-      onDragStart={(event) => {
-        if ((event.target as HTMLElement).closest('button,details,input')) {
-          event.preventDefault();
+      data-tab-id={tab.id}
+      className={`tab-card ${list ? 'list-card' : ''} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''} ${dropBefore ? 'drop-before' : ''} ${dropAfter ? 'drop-after' : ''}`}
+      onClick={(event) => {
+        if (disabled) return;
+        if (
+          (event.target as Element).closest(
+            'button, a, input, label, summary, details, .tab-drag-handle, .list-actions, .preview-actions',
+          )
+        )
           return;
-        }
-        onDragStart?.(event);
+        onActivate();
       }}
       onDragEnd={onDragEnd}
     >
@@ -142,7 +210,18 @@ export function TabCard({
         </div>
       )}
       {onDragStart && (
-        <span className="tab-drag-handle" aria-hidden="true" title="Drag to another session">
+        <span
+          className="tab-drag-handle"
+          aria-hidden="true"
+          title="Drag to reorder or move"
+          draggable={!disabled}
+          onDragStart={(event) => {
+            event.stopPropagation();
+            if (ref.current) event.dataTransfer.setDragImage(ref.current, 24, 24);
+            onDragStart(event);
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
           <GripVertical size={17} />
         </span>
       )}
@@ -160,7 +239,11 @@ export function TabCard({
           style={{ background: `hsl(${hue} 35% 92%)`, color: `hsl(${hue} 36% 32%)` }}
           aria-hidden="true"
         >
-          {initial}
+          {faviconUrl && !failedFavicon ? (
+            <img src={faviconUrl} alt="" draggable={false} onError={() => setFailedFavicon(true)} />
+          ) : (
+            initial
+          )}
         </span>
         <div className="card-copy">
           <h3 title={tab.title}>{tab.title}</h3>
@@ -181,85 +264,60 @@ export function TabCard({
                 <ImageOff size={12} />
               </span>
             )}
+            {list && sessionName && (
+              <>
+                <span className="meta-separator" aria-hidden="true">
+                  ·
+                </span>
+                <span className="source-session" title={sessionName}>
+                  {sessionName}
+                </span>
+              </>
+            )}
+            {list && stateLabel && (
+              <>
+                <span className="meta-separator" aria-hidden="true">
+                  ·
+                </span>
+                <span className="tab-state still-open">{stateLabel}</span>
+              </>
+            )}
           </p>
-          {sessionName && <span className="source-session">{sessionName}</span>}
+          {!list && sessionName && <span className="source-session">{sessionName}</span>}
         </div>
-        <button
-          className={`icon-button favorite-tab ${tab.favorite ? 'is-favorite' : ''}`}
-          onClick={onFavorite}
-          disabled={disabled}
-          aria-label={`${tab.favorite ? 'Unfavorite' : 'Favorite'} ${tab.title}`}
-        >
-          <Star size={16} fill={tab.favorite ? 'currentColor' : 'none'} />
-        </button>
-        <details className="tab-menu" name="saved-tab-actions" ref={menuRef}>
-          <summary
-            aria-label={`Actions for ${tab.title}`}
-            aria-disabled={disabled}
-            onClick={(event) => {
-              if (disabled) event.preventDefault();
-            }}
-          >
-            <MoreHorizontal size={18} />
-          </summary>
-          <div className="tab-menu-panel">
-            <button
-              disabled={disabled || !canMove}
-              title={!canMove ? 'Save another session to create a destination.' : undefined}
-              onClick={() => {
-                menuRef.current?.removeAttribute('open');
-                onMove();
-              }}
-            >
-              <FolderInput size={16} />
-              Move to session…
-            </button>
-            <button
-              className="danger-text"
-              disabled={disabled}
-              onClick={() => {
-                menuRef.current?.removeAttribute('open');
-                onDelete();
-              }}
-            >
-              <Trash2 size={16} />
-              Delete saved tab
-            </button>
-          </div>
-        </details>
+        {!list && favoriteControl}
+        {!list && menuControl}
       </div>
-      {(list || tab.closeState !== 'closed') && (
-        <div className="card-footer">
-          <span className="tab-state still-open">
-            {tab.closeState === 'closed'
-              ? ''
-              : tab.closeState === 'changed'
-                ? 'Original page changed'
-                : 'Source left open'}
-          </span>
-          <div>
-            {list && tab.preview === 'ready' && (
-              <button
-                className="restore-tab preview-tab"
-                onClick={onPreview}
-                aria-label={`Open preview of ${tab.title}`}
-              >
-                <Maximize2 size={15} />
-                Preview
-              </button>
-            )}
-            {list && (
-              <button
-                className="restore-tab"
-                onClick={onRestore}
-                disabled={disabled}
-                aria-label={`Restore ${tab.title}`}
-              >
-                Restore <ArrowUpRight size={14} />
-              </button>
-            )}
-          </div>
+      {list ? (
+        <div className="list-actions">
+          {favoriteControl}
+          {menuControl}
+          <span className="list-action-divider" aria-hidden="true" />
+          {tab.preview === 'ready' && (
+            <button
+              className="restore-tab preview-tab"
+              onClick={onPreview}
+              aria-label={`Open preview of ${tab.title}`}
+            >
+              <Maximize2 size={15} />
+              Preview
+            </button>
+          )}
+          <button
+            className="restore-tab"
+            onClick={onRestore}
+            disabled={disabled}
+            aria-label={`Restore ${tab.title}`}
+          >
+            Restore <ArrowUpRight size={14} />
+          </button>
         </div>
+      ) : (
+        stateLabel && (
+          <div className="card-footer">
+            <span className="tab-state still-open">{stateLabel}</span>
+          </div>
+        )
       )}
     </article>
   );

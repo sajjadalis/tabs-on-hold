@@ -10,7 +10,13 @@ export type Request =
   | { type: 'RESTORE'; ids: string[]; remove: boolean; newWindow: boolean }
   | { type: 'OPEN'; id: string }
   | { type: 'DELETE'; ids: string[] }
-  | { type: 'MOVE'; ids: string[]; destinationId: string }
+  | {
+      type: 'MOVE';
+      ids: string[];
+      destinationId: string;
+      /** Omit for a session move; null explicitly reorders to the end. */
+      beforeId?: string | null;
+    }
   | { type: 'CLEAR' }
   | { type: 'DELETE_PREVIEWS' }
   | { type: 'CANCEL' }

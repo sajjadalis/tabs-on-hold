@@ -539,7 +539,11 @@ export default defineBackground(() => {
         if (!saved) throw new Error('This saved tab is no longer available.');
         if (!canRestore(saved.url)) throw new Error('This address cannot be safely opened.');
         const window = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
-        const opened = await chrome.tabs.create({ url: saved.url, windowId: window.id, active: true });
+        const opened = await chrome.tabs.create({
+          url: saved.url,
+          windowId: window.id,
+          active: true,
+        });
         if (opened.id === undefined) throw new Error('Chrome could not open this tab.');
         return { tabId: opened.id };
       } finally {
@@ -602,7 +606,9 @@ export default defineBackground(() => {
     try {
       if (message.type === 'DELETE') return await deleteTabs(message.ids);
       if (message.type === 'MOVE')
-        return { moved: await moveTabs(message.ids, message.destinationId) };
+        return {
+          moved: await moveTabs(message.ids, message.destinationId, db, message.beforeId),
+        };
       if (message.type === 'CLEAR') return await clearLibrary();
       if (message.type === 'DELETE_PREVIEWS') return await deletePreviews();
       throw new Error('Unknown extension request.');

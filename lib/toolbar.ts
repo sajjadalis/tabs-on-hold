@@ -12,7 +12,7 @@ export function initToolbarCounter() {
       if (revisions.get(windowId) !== revision) return;
       const count = tabs.length;
       const text = count > 999 ? '999+' : String(count);
-      const title = `Tabs Aside · ${count} ${count === 1 ? 'tab' : 'tabs'} in this window`;
+      const title = `Tabs on Hold · ${count} ${count === 1 ? 'tab' : 'tabs'} in this window`;
       // Chrome actions are scoped to tabs, so every tab gets its own window's count.
       await Promise.allSettled(
         tabs.flatMap((tab) =>

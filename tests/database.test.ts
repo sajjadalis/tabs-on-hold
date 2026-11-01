@@ -85,6 +85,56 @@ describe('moving tabs between sessions', () => {
     ).toEqual(['b1', 'a1', 'a2']);
     expect(await database.sessions.get('a')).toBeUndefined();
   });
+  it('reorders tabs within a session before a chosen tab', async () => {
+    expect(await moveTabs(['a2'], 'a', database, 'a1')).toBe(1);
+    expect(
+      orderSessionTabs(await database.tabs.where('sessionId').equals('a').toArray()).map(
+        (tab) => tab.id,
+      ),
+    ).toEqual(['a2', 'a1']);
+    expect((await database.tabs.get('a2'))?.position).toBe(0);
+    expect((await database.tabs.get('a1'))?.position).toBe(1);
+    expect((await database.tabs.get('a2'))?.sessionId).toBe('a');
+    expect(await database.screenshots.count()).toBe(3);
+  });
+  it('reorders an existing tab to the end with an explicit null position', async () => {
+    expect(await moveTabs(['a1'], 'a', database, null)).toBe(1);
+    expect(
+      orderSessionTabs(await database.tabs.where('sessionId').equals('a').toArray()).map(
+        (tab) => tab.id,
+      ),
+    ).toEqual(['a2', 'a1']);
+    expect(await database.sessions.get('a')).toBeDefined();
+    expect(await database.screenshots.count()).toBe(3);
+    expect(await moveTabs(['a1'], 'a', database, null)).toBe(0);
+  });
+  it('appends a mixed-session selection including destination tabs in their relative order', async () => {
+    await database.tabs.add({ ...tab('a3', 'a'), index: 2 });
+    expect(await moveTabs(['a1', 'b1', 'a2'], 'a', database, null)).toBe(3);
+    expect(
+      orderSessionTabs(await database.tabs.where('sessionId').equals('a').toArray()).map(
+        (tab) => tab.id,
+      ),
+    ).toEqual(['a3', 'a1', 'a2', 'b1']);
+    expect(await database.sessions.get('b')).toBeUndefined();
+  });
+  it('inserts moved tabs at an explicit position in another session', async () => {
+    expect(await moveTabs(['a1'], 'b', database, 'b1')).toBe(1);
+    expect(
+      orderSessionTabs(await database.tabs.where('sessionId').equals('b').toArray()).map(
+        (tab) => tab.id,
+      ),
+    ).toEqual(['a1', 'b1']);
+    expect((await database.tabs.get('a1'))?.position).toBe(0);
+    expect((await database.tabs.get('b1'))?.position).toBe(1);
+    expect(await database.sessions.get('a')).toBeDefined();
+  });
+  it('rejects a stale or moving insertion target', async () => {
+    const before = await database.tabs.toArray();
+    await expect(moveTabs(['a1'], 'a', database, 'missing')).rejects.toThrow('position');
+    await expect(moveTabs(['a1'], 'a', database, 'a1')).rejects.toThrow('position');
+    expect(await database.tabs.toArray()).toEqual(before);
+  });
   it('treats a drop onto the current session as a no-op', async () => {
     const before = await database.tabs.toArray();
     expect(await moveTabs(['a1', 'a1'], 'a', database)).toBe(0);

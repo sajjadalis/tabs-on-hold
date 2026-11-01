@@ -53,7 +53,8 @@ import {
 } from './shared';
 import { TabCard } from './TabCard';
 import { ImportDialog } from './ImportDialog';
-import { createNativeBackup } from '../lib/imports';
+import { createNativeBackup, MAX_IMPORT_BYTES } from '../lib/imports';
+import { APP_VERSION } from '../lib/version';
 
 type ConfirmAction = {
   title: string;
@@ -420,18 +421,26 @@ export function Manager() {
     setAge('any');
   };
   const exportLibrary = async () => {
-    const payload = await db.transaction('r', db.sessions, db.tabs, async () =>
-      createNativeBackup(await db.sessions.toArray(), await db.tabs.toArray()),
+    const snapshot = await db.transaction('r', db.sessions, db.tabs, db.screenshots, async () => ({
+      sessions: await db.sessions.toArray(),
+      tabs: await db.tabs.toArray(),
+      screenshots: await db.screenshots.toArray(),
+    }));
+    // Encode after closing the read transaction: Blob reads are asynchronous.
+    const payload = await createNativeBackup(
+      snapshot.sessions,
+      snapshot.tabs,
+      snapshot.screenshots,
     );
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
-    );
+    const file = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    if (file.size > MAX_IMPORT_BYTES) throw new Error('This backup exceeds the 256 MB JSON limit.');
+    const url = URL.createObjectURL(file);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = `tabs-on-hold-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    setNotice('URL backup exported. Screenshots are not included.');
+    setNotice('Backup exported, including available screenshot previews.');
   };
   const renderCards = (records: SavedTab[], groupId: string) => {
     const batchSize = groupId === 'all' ? 60 : settings.sessionTabLimit || records.length;
@@ -520,7 +529,7 @@ export function Manager() {
         </a>
         <div className="workspace-label">
           <span className="workspace-dot" />
-          Your personal space<span className="local-pill">LOCAL</span>
+          Your saved library
         </div>
         <p className="nav-label">YOUR LIBRARY</p>
         <nav aria-label="Library">
@@ -566,7 +575,7 @@ export function Manager() {
           <div className="storage-card">
             <div>
               <HardDrive size={15} />
-              <span>Local storage</span>
+              <span>Preview storage</span>
               <strong>{formatBytes(images?.bytes || 0)}</strong>
             </div>
             <div className="storage-line">
@@ -576,7 +585,7 @@ export function Manager() {
                 }}
               />
             </div>
-            <p>{plural(images?.count || 0, 'preview')} · stored on this device</p>
+            <p>{plural(images?.count || 0, 'preview')}</p>
           </div>
           <button
             className="sidebar-action"
@@ -596,7 +605,7 @@ export function Manager() {
           </button>
           <div className="sidebar-version">
             <span>Made for a little less clutter.</span>
-            <span>v0.1.6</span>
+            <span>v{APP_VERSION}</span>
           </div>
         </div>
       </aside>
@@ -944,8 +953,8 @@ export function Manager() {
                   Visual previews
                 </span>
                 <span>
-                  <ShieldCheck size={14} />
-                  Stored locally
+                  <Archive size={14} />
+                  Organized sessions
                 </span>
                 <span>
                   <ArrowUpRight size={14} />
@@ -1093,11 +1102,11 @@ export function Manager() {
         </section>
         <footer className="main-footer">
           <span>
-            <ShieldCheck size={13} />
-            Your tabs stay on your device. No account. No cloud.
+            <Archive size={13} />
+            Saved sessions, ready when you need them.
           </span>
           <button className="text-button" onClick={() => setHelpOpen(true)}>
-            A small space. A big difference.
+            Help & privacy
             <ArrowUpRight size={12} />
           </button>
         </footer>
@@ -1291,8 +1300,8 @@ export function Manager() {
       )}
       {settingsOpen && (
         <Dialog
-          title="Make yourself at home"
-          description="A few preferences for a calmer browser."
+          title="Settings"
+          description="Choose how tabs are saved, displayed, and restored."
           error={error}
           onClose={() => setSettingsOpen(false)}
         >
@@ -1302,8 +1311,8 @@ export function Manager() {
               <span>
                 <strong>Capture screenshot previews</strong>
                 <small>
-                  Captures the visible area of loaded tabs. Sleeping tabs get placeholders by
-                  default. Existing previews are kept if you turn this off.
+                  Save a screenshot of each tab's visible area. Existing previews are kept when this
+                  is turned off.
                 </small>
               </span>
               <input
@@ -1316,9 +1325,8 @@ export function Manager() {
               <span>
                 <strong>Capture previews for sleeping tabs</strong>
                 <small>
-                  Off by default. Turning this on loads sleeping tabs one at a time and can take
-                  longer and use more memory and data. Waits up to 15 seconds per tab; unsuccessful
-                  captures leave the source open.
+                  Load sleeping tabs for screenshots. This can take longer and use more memory and
+                  data.
                 </small>
               </span>
               <input
@@ -1344,10 +1352,7 @@ export function Manager() {
             <label className="setting-row">
               <span>
                 <strong>Open manager after saving</strong>
-                <small>
-                  Off by default: saved tabs close and an emptied window keeps one blank tab.
-                  Excluded tabs and failed captures stay open.
-                </small>
+                <small>Show your saved library when saving finishes.</small>
               </span>
               <input
                 type="checkbox"
@@ -1360,7 +1365,7 @@ export function Manager() {
             <label className="setting-row">
               <span>
                 <strong>Preview quality</strong>
-                <small>Always preserves the full captured area.</small>
+                <small>Higher quality uses more storage.</small>
               </span>
               <select
                 aria-label="Screenshot quality"
@@ -1418,7 +1423,6 @@ export function Manager() {
             <label className="setting-row">
               <span>
                 <strong>Appearance</strong>
-                <small>A space that feels like yours.</small>
               </span>
               <select
                 aria-label="Appearance"
@@ -1436,9 +1440,8 @@ export function Manager() {
               <span>
                 <strong>Card screenshots</strong>
                 <small>
-                  Cards use a consistent 16:9 frame across monitors. Fill scales proportionally and
-                  crops edges. Fit shows the whole image with space around it. Preview always shows
-                  the complete screenshot.
+                  Fill crops the edges; Fit shows the whole image. Full preview always shows the
+                  complete screenshot.
                 </small>
               </span>
               <select
@@ -1480,7 +1483,7 @@ export function Manager() {
             </label>
           </div>
           <div className="settings-section">
-            <h3>On this device</h3>
+            <h3>Library & backups</h3>
             <p className="storage-summary">
               {plural(tabs.length, 'tab')} in {plural(sessions.length, 'session')} ·{' '}
               {formatBytes(images?.bytes || 0)} of previews
@@ -1492,8 +1495,10 @@ export function Manager() {
             >
               <Download size={17} />
               <span>
-                <strong>Export a URL backup</strong>
-                <small>Session names, URLs, favorites, and groups. Images are excluded.</small>
+                <strong>Export a backup</strong>
+                <small>
+                  Sessions, URLs, favorites, groups, and screenshot previews in one JSON file.
+                </small>
               </span>
               <ArrowUpRight size={15} />
             </button>
@@ -1508,9 +1513,7 @@ export function Manager() {
               <FolderInput size={17} />
               <span>
                 <strong>Import sessions</strong>
-                <small>
-                  Restore a native backup or migrate from Tabs Aside or Tab Session Manager.
-                </small>
+                <small>Import a Tabs on Hold, Tabs Aside, or Tab Session Manager backup.</small>
               </span>
               <ArrowUpRight size={15} />
             </button>
@@ -1563,7 +1566,7 @@ export function Manager() {
             </button>
           </div>
           <div className="dialog-footer">
-            <span className="settings-version">Tabs on Hold · v0.1.6</span>
+            <span className="settings-version">Tabs on Hold · v{APP_VERSION}</span>
             <button className="primary-button" onClick={() => setSettingsOpen(false)}>
               Done
             </button>
@@ -1572,52 +1575,53 @@ export function Manager() {
       )}
       {helpOpen && (
         <Dialog
-          title="Your tabs. Your space."
-          description="A few things worth knowing."
+          title="Privacy & help"
+          description="How saving, previews, and restoring work."
           onClose={() => setHelpOpen(false)}
         >
           <div className="help-content">
             <p>
               <ShieldCheck size={18} />
               <span>
-                <strong>Local by design.</strong> Saved URLs and screenshots live in this
-                extension’s database on your device. No accounts, analytics, or cloud uploads.
-                Uninstalling removes extension data, so export important URLs first.
+                <strong>Privacy.</strong> Your saved tabs and screenshots are stored on your
+                computer and are not uploaded.
+              </span>
+            </p>
+            <p>
+              <Download size={18} />
+              <span>
+                <strong>Backups.</strong> Export saved tabs and screenshots from Settings. Keep a
+                backup before uninstalling.
               </span>
             </p>
             <p>
               <Image size={18} />
               <span>
-                <strong>The view you remember.</strong> Fresh previews activate tabs one at a time.
-                Captures show the visible webpage area, not the entire scrolling page. Some pages
-                and video surfaces may not capture as expected. Sleeping tabs are saved without
-                waking them and show a placeholder by default. Enable sleeping-tab previews in
-                Settings to load them for capture; this can take longer. Failed captures leave the
-                source tab open.
+                <strong>Screenshot previews.</strong> Captures show the visible page area. Sleeping
+                tabs stay asleep unless you enable previews for them. Some pages and video may not
+                capture correctly.
               </span>
             </p>
             <p>
               <Archive size={18} />
               <span>
-                <strong>Saved before closed.</strong> URLs are stored first. If previews are
-                enabled, a tab closes only after its preview is saved. Cancelling leaves unfinished
-                tabs open; their saved URL records remain available.
+                <strong>Saving tabs.</strong> Tabs close after their data is saved. Failed captures
+                and cancellation leave unfinished tabs open.
               </span>
             </p>
             <p>
               <ArrowUpRight size={18} />
               <span>
-                <strong>A return, not a time machine.</strong> Restore opens saved URLs. It does not
-                preserve form drafts, login sessions, browser history, video position, or fullscreen
-                mode. Review unsaved work before setting tabs aside.
+                <strong>Restoring tabs.</strong> Opens saved URLs. Unsaved forms, page history,
+                scroll position, and playback state are not preserved.
               </span>
             </p>
             <p>
               <Trash2 size={18} />
               <span>
-                <strong>Removal means removal.</strong> With remove-after-restore enabled,
-                successful restores delete their saved records and previews immediately. Manual
-                deletion asks for confirmation. No hidden trash or restore archive is kept.
+                <strong>Deleting saved items.</strong> Remove-after-restore deletes saved copies
+                after they open successfully. Manual deletion asks for confirmation. Deleted items
+                cannot be recovered without a backup.
               </span>
             </p>
             <div className="shortcut-list">

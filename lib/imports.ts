@@ -1,7 +1,16 @@
 import { db, type AsideDatabase } from './db';
-import { canRestore, domainOf, orderSessionTabs, type SavedTab, type Session } from './model';
+import {
+  canRestore,
+  domainOf,
+  orderSessionTabs,
+  type SavedTab,
+  type Session,
+  type Screenshot,
+} from './model';
+import { decodeScreenshot, encodeScreenshot, type BackupScreenshot } from './backup-images';
 
-export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
+export const MAX_IMPORT_BYTES = 256 * 1024 * 1024;
+export const IMPORT_SIZE_MESSAGE = 'Choose a JSON backup no larger than 256 MB.';
 const MAX_TABS = 100_000;
 const COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
 type RecordValue = Record<string, unknown>;
@@ -17,7 +26,7 @@ export type ImportTab = Pick<
   | 'muted'
   | 'favorite'
   | 'group'
->;
+> & { screenshot?: Omit<Screenshot, 'tabId'> };
 export interface ImportSession {
   key: string;
   name: string;
@@ -51,9 +60,9 @@ const object = (value: unknown, label: string): RecordValue =>
 
 // Adapt external structures into portable metadata. Never import live tab IDs,
 // screenshot flags, settings, or analytics identifiers from a storage dump.
+// Native backups explicitly carry validated screenshot data instead.
 export async function inspectImport(contents: string, now = Date.now()): Promise<ImportPlan> {
-  if (new Blob([contents]).size > MAX_IMPORT_BYTES)
-    throw new Error('Choose a JSON backup smaller than 25 MB.');
+  if (new Blob([contents]).size > MAX_IMPORT_BYTES) throw new Error(IMPORT_SIZE_MESSAGE);
   let data: unknown;
   try {
     data = JSON.parse(contents.replace(/^\uFEFF/, ''));
@@ -111,9 +120,9 @@ export async function inspectImport(contents: string, now = Date.now()): Promise
   };
   let source: string;
   if (root.format === 'tabs-on-hold') {
-    if (root.version !== 1)
+    if (root.version !== 2)
       throw new Error(
-        'This native backup version is not supported. Update the extension before importing it.',
+        'This backup format is not supported. Choose a JSON backup exported by Tabs on Hold.',
       );
     source = 'Tabs on Hold';
     const nativeTabs = array(root.tabs, 'tabs');
@@ -147,10 +156,14 @@ export async function inspectImport(contents: string, now = Date.now()): Promise
           number(a.index, 0) - number(b.index, 0) ||
           text(a.id).localeCompare(text(b.id)),
       );
-      const tabs = items.flatMap((tab, i) => {
+      const tabs: ImportTab[] = [];
+      for (const [i, tab] of items.entries()) {
         const result = tabOf(tab, date, i);
-        return result ? [result] : [];
-      });
+        if (!result) continue;
+        if (tab.screenshot !== undefined)
+          result.screenshot = await decodeScreenshot(tab.screenshot);
+        tabs.push(result);
+      }
       sessions.push({
         key,
         name: text(item.name) || `Session · ${new Date(date).toISOString().slice(0, 10)}`,
@@ -161,10 +174,6 @@ export async function inspectImport(contents: string, now = Date.now()): Promise
     }
     if ([...bySession.keys()].some((key) => !keys.has(key)))
       invalid('Invalid native backup: some tabs refer to missing sessions.');
-    if (root.includesScreenshots === true)
-      warnings.push(
-        'Images in this file will not be imported. Only session and tab metadata are supported.',
-      );
   } else if (record(root.local) && Array.isArray(root.local.collections)) {
     source = 'Tabs Aside';
     for (const [i, value] of root.local.collections.entries()) {
@@ -257,6 +266,7 @@ export async function importSessions(
     'rw',
     database.sessions,
     database.tabs,
+    database.screenshots,
     database.imports,
     async () => {
       const receipt = await database.imports.get(plan.fingerprint);
@@ -266,22 +276,29 @@ export async function importSessions(
         );
       const sessions: Session[] = [];
       const tabs: SavedTab[] = [];
+      const screenshots: Screenshot[] = [];
       for (const item of selected) {
         const id = crypto.randomUUID();
         sessions.push({ id, name: item.name, createdAt: item.createdAt, favorite: item.favorite });
         tabs.push(
-          ...item.tabs.map((tab): SavedTab => ({
-            ...tab,
-            id: crypto.randomUUID(),
-            sessionId: id,
-            domain: domainOf(tab.url),
-            preview: 'disabled',
-            closeState: 'closed',
-          })),
+          ...item.tabs.map(({ screenshot, ...tab }): SavedTab => {
+            const tabId = crypto.randomUUID();
+            if (screenshot) screenshots.push({ ...screenshot, tabId });
+            return {
+              ...tab,
+              id: tabId,
+              sessionId: id,
+              domain: domainOf(tab.url),
+              preview: screenshot ? 'ready' : 'disabled',
+              ...(screenshot ? { previewBytes: screenshot.bytes } : {}),
+              closeState: 'closed',
+            };
+          }),
         );
       }
       await database.sessions.bulkAdd(sessions);
       await database.tabs.bulkAdd(tabs);
+      await database.screenshots.bulkAdd(screenshots);
       await database.imports.put({
         id: plan.fingerprint,
         sessionKeys: [...new Set([...(receipt?.sessionKeys ?? []), ...selected.map((s) => s.key)])],
@@ -292,33 +309,52 @@ export async function importSessions(
   );
 }
 
-export function createNativeBackup(sessions: Session[], tabs: SavedTab[], now = Date.now()) {
+export async function createNativeBackup(
+  sessions: Session[],
+  tabs: SavedTab[],
+  screenshots: Screenshot[] = [],
+  now = Date.now(),
+) {
+  const byId = new Map(screenshots.map((image) => [image.tabId, image]));
+  const ordered = sessions.flatMap((session) =>
+    orderSessionTabs(tabs.filter((tab) => tab.sessionId === session.id)),
+  );
+  // Reject an over-limit export before allocating its Base64 strings.
+  const imageBytes = ordered.reduce((sum, tab) => {
+    const image = byId.get(tab.id);
+    return sum + (image ? 4 * Math.ceil(image.blob.size / 3) : 0);
+  }, 0);
+  if (imageBytes > MAX_IMPORT_BYTES) throw new Error('This backup exceeds the 256 MB JSON limit.');
+  const images = new Map<string, BackupScreenshot>();
+  for (const tab of ordered) {
+    const image = byId.get(tab.id);
+    if (image) images.set(tab.id, await encodeScreenshot(image));
+  }
   return {
     format: 'tabs-on-hold',
-    version: 1,
+    version: 2,
     exportedAt: new Date(now).toISOString(),
-    includesScreenshots: false,
+    includesScreenshots: images.size > 0,
     sessions: sessions.map(({ id, name, createdAt, favorite }) => ({
       id,
       name,
       createdAt,
       favorite,
     })),
-    tabs: sessions
-      .flatMap((session) => orderSessionTabs(tabs.filter((tab) => tab.sessionId === session.id)))
-      .map((tab) => ({
-        id: tab.id,
-        sessionId: tab.sessionId,
-        title: tab.title,
-        url: tab.url,
-        createdAt: tab.createdAt,
-        index: tab.index,
-        position: tab.position,
-        windowId: tab.windowId,
-        pinned: tab.pinned,
-        muted: tab.muted,
-        favorite: tab.favorite,
-        group: tab.group,
-      })),
+    tabs: ordered.map((tab) => ({
+      id: tab.id,
+      sessionId: tab.sessionId,
+      title: tab.title,
+      url: tab.url,
+      createdAt: tab.createdAt,
+      index: tab.index,
+      position: tab.position,
+      windowId: tab.windowId,
+      pinned: tab.pinned,
+      muted: tab.muted,
+      favorite: tab.favorite,
+      group: tab.group,
+      ...(images.has(tab.id) ? { screenshot: images.get(tab.id) } : {}),
+    })),
   };
 }

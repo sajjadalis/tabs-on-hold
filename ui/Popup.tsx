@@ -1,11 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
-import { ArrowDownToLine, ArrowUpRight, Check, Image, ShieldCheck } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpRight, Check, Image } from 'lucide-react';
 import { db } from '../lib/db';
 import { request } from '../lib/api';
 import { useSettings } from '../lib/settings';
 import { BrandMark, OperationStatus, useCapture, useTheme } from './shared';
 import type { Scope } from '../lib/model';
+import { APP_VERSION } from '../lib/version';
 
 export function Popup() {
   const [error, setError] = useState('');
@@ -25,7 +26,7 @@ export function Popup() {
           <strong>Tabs on Hold</strong>
           <span>SAVE FOR LATER</span>
         </div>
-        <span className="version-pill">v0.1.6</span>
+        <span className="version-pill">v{APP_VERSION}</span>
       </header>
       <div className="popup-intro">
         <h1>
@@ -105,9 +106,7 @@ export function Popup() {
         </span>
         <ArrowUpRight size={18} />
       </button>
-      <footer className="popup-privacy">
-        <ShieldCheck size={13} /> On your device. Always yours.
-      </footer>
+      <footer className="popup-footer">Save now. Pick up later.</footer>
     </main>
   );
 }

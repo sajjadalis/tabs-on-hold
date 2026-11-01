@@ -55,11 +55,16 @@ try {
   await manager.goto(`chrome-extension://${extensionId}/manager.html`);
   await expect(manager.getByRole('heading', { name: 'Your sessions.' })).toBeVisible();
   await manager.screenshot({ path: 'artifacts/manager-empty.png', fullPage: true });
+  await manager.getByRole('button', { name: 'Privacy & how it works', exact: true }).click();
+  await expect(manager.getByRole('dialog')).toContainText(
+    'Your saved tabs and screenshots are stored on your computer and are not uploaded.',
+  );
+  await manager.getByRole('button', { name: 'Got it', exact: true }).click();
   const read = (store) =>
     manager.evaluate(
       (store) =>
         new Promise((resolve, reject) => {
-          const open = indexedDB.open('tabs-aside-done-right');
+          const open = indexedDB.open('tabs-on-hold');
           open.onerror = () => reject(open.error);
           open.onsuccess = () => {
             const database = open.result;
@@ -217,7 +222,7 @@ try {
     ),
   ).toBe(true);
   const imageInfo = await manager.evaluate(async () => {
-    const open = indexedDB.open('tabs-aside-done-right');
+    const open = indexedDB.open('tabs-on-hold');
     const database = await new Promise((resolve) => {
       open.onsuccess = () => resolve(open.result);
     });
@@ -241,7 +246,7 @@ try {
   ).toBe(true);
   const videoColor = await manager.evaluate(
     async (id) => {
-      const open = indexedDB.open('tabs-aside-done-right');
+      const open = indexedDB.open('tabs-on-hold');
       const database = await new Promise((resolve) => {
         open.onsuccess = () => resolve(open.result);
       });
@@ -270,7 +275,7 @@ try {
   await manager.bringToFront();
   // A full gallery verifies actual above-the-fold density, not just an empty layout.
   const galleryIds = await manager.evaluate(async () => {
-    const open = indexedDB.open('tabs-aside-done-right');
+    const open = indexedDB.open('tabs-on-hold');
     const database = await new Promise((resolve) => {
       open.onsuccess = () => resolve(open.result);
     });
@@ -375,7 +380,7 @@ try {
   // Mixed cards share their frame/body geometry, including missing and corrupt blobs.
   await manager.evaluate(async () => {
     const database = await new Promise((resolve) => {
-      const open = indexedDB.open('tabs-aside-done-right');
+      const open = indexedDB.open('tabs-on-hold');
       open.onsuccess = () => resolve(open.result);
     });
     const template = await new Promise((resolve) => {
@@ -448,7 +453,7 @@ try {
   await manager.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
   await manager.evaluate(async () => {
     const database = await new Promise((resolve) => {
-      const open = indexedDB.open('tabs-aside-done-right');
+      const open = indexedDB.open('tabs-on-hold');
       open.onsuccess = () => resolve(open.result);
     });
     const write = database.transaction(['tabs', 'screenshots'], 'readwrite');
@@ -524,7 +529,7 @@ try {
   // Menu moves, native drag/drop, and selected-tab moves share the same atomic path.
   const originalSessionId = saved[0].sessionId;
   const moveFixtureIds = await manager.evaluate(async () => {
-    const open = indexedDB.open('tabs-aside-done-right');
+    const open = indexedDB.open('tabs-on-hold');
     const database = await new Promise((resolve) => {
       open.onsuccess = () => resolve(open.result);
     });
@@ -747,7 +752,7 @@ try {
   await manager.evaluate(
     (template) =>
       new Promise((resolve) => {
-        const open = indexedDB.open('tabs-aside-done-right');
+        const open = indexedDB.open('tabs-on-hold');
         open.onsuccess = () => {
           const database = open.result;
           const tx = database.transaction('tabs', 'readwrite');
@@ -784,7 +789,7 @@ try {
   await manager.evaluate(
     (job) =>
       new Promise((resolve) => {
-        const open = indexedDB.open('tabs-aside-done-right');
+        const open = indexedDB.open('tabs-on-hold');
         open.onsuccess = () => {
           const database = open.result;
           const tx = database.transaction('jobs', 'readwrite');
@@ -1121,23 +1126,148 @@ try {
   expect(sessionWindowTabs.some((tab) => tab.url === 'about:blank')).toBe(false);
   await worker.evaluate((id) => chrome.windows.remove(id), restoredGroup.group.windowId);
   await manager.bringToFront();
+  // Round-trip real PNG/JPEG/WebP files through the download/upload path.
+  const backupImageTabs = await read('tabs');
+  const backupImageTab = backupImageTabs[0];
+  const backupImageData = readFileSync('artifacts/manager-empty.png').toString('base64');
+  const backupImages = await manager.evaluate(
+    async ({ tabIds, data }) => {
+      const bytes = Uint8Array.from(atob(data), (character) => character.charCodeAt(0));
+      const png = new Blob([bytes], { type: 'image/png' });
+      const bitmap = await createImageBitmap(png);
+      const images = [];
+      try {
+        for (const [index, mimeType] of ['image/png', 'image/jpeg', 'image/webp'].entries()) {
+          const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+          canvas.getContext('2d').drawImage(bitmap, 0, 0);
+          const blob =
+            index === 0 ? png : await canvas.convertToBlob({ type: mimeType, quality: 0.8 });
+          images.push({
+            tabId: tabIds[index],
+            blob,
+            bytes: blob.size,
+            width: bitmap.width,
+            height: bitmap.height,
+            capturedAt: 1700000000000,
+          });
+        }
+      } finally {
+        bitmap.close();
+      }
+      const database = await new Promise((resolve, reject) => {
+        const open = indexedDB.open('tabs-on-hold');
+        open.onsuccess = () => resolve(open.result);
+        open.onerror = () => reject(open.error);
+      });
+      const tx = database.transaction(['tabs', 'screenshots'], 'readwrite');
+      for (const image of images) {
+        tx.objectStore('screenshots').put(image);
+        const request = tx.objectStore('tabs').get(image.tabId);
+        request.onsuccess = () =>
+          tx
+            .objectStore('tabs')
+            .put({ ...request.result, preview: 'ready', previewBytes: image.bytes });
+      }
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      database.close();
+      const records = [];
+      for (const image of images) {
+        const data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(image.blob);
+        });
+        records.push({
+          tabId: image.tabId,
+          screenshot: {
+            mimeType: image.blob.type,
+            data,
+            width: image.width,
+            height: image.height,
+            capturedAt: image.capturedAt,
+          },
+        });
+      }
+      return records;
+    },
+    { tabIds: backupImageTabs.map((tab) => tab.id), data: backupImageData },
+  );
   await manager.getByRole('button', { name: 'Settings', exact: true }).click();
   const downloaded = manager.waitForEvent('download');
-  await manager.getByRole('button', { name: /Export a URL backup/ }).click();
+  await manager.getByRole('button', { name: 'Export a backup', exact: false }).click();
   const nativeBackup = JSON.parse(readFileSync(await (await downloaded).path(), 'utf8'));
   expect(nativeBackup.format).toBe('tabs-on-hold');
-  expect(nativeBackup.includesScreenshots).toBe(false);
+  expect(nativeBackup.version).toBe(2);
+  expect(nativeBackup.includesScreenshots).toBe(true);
+  for (const image of backupImages)
+    expect(nativeBackup.tabs.find((tab) => tab.id === image.tabId).screenshot).toEqual(
+      image.screenshot,
+    );
   expect(nativeBackup.tabs.every((t) => !('sourceTabId' in t) && !('preview' in t))).toBe(true);
   await manager.getByRole('button', { name: 'Done', exact: true }).click();
   await manager.getByRole('button', { name: 'Import sessions', exact: true }).click();
+  const beforeInvalidImport = await Promise.all(
+    ['sessions', 'tabs', 'screenshots', 'imports'].map(read),
+  );
+  for (const patch of [
+    { mimeType: 'image/jpeg', data: '/9j/' },
+    { data: Buffer.from(backupImageData, 'base64').subarray(0, 33).toString('base64') },
+    { width: 1, height: 1 },
+  ]) {
+    const invalid = structuredClone(nativeBackup);
+    Object.assign(invalid.tabs.find((tab) => tab.id === backupImageTab.id).screenshot, patch);
+    await upload(invalid);
+    await expect(manager.getByRole('alert')).toContainText('Invalid screenshot');
+    expect(await Promise.all(['sessions', 'tabs', 'screenshots', 'imports'].map(read))).toEqual(
+      beforeInvalidImport,
+    );
+    await expect(manager.getByRole('button', { name: /^Import 0 sessions/ })).toBeDisabled();
+  }
   await upload(nativeBackup);
   await expect(
     manager.getByRole('dialog').getByText('Tabs on Hold', { exact: true }),
   ).toBeVisible();
+  await expect(manager.locator('.import-explanation')).toContainText(
+    '3 screenshots will be restored',
+  );
   await manager.getByRole('button', { name: 'Import 1 session · 3 tabs', exact: true }).click();
   await expect(manager.locator('dialog')).toHaveCount(0);
   expect(await read('sessions')).toHaveLength(2);
   expect(new Set((await read('tabs')).map((t) => t.id)).size).toBe(6);
+  const restoredImageTab = (await read('tabs')).find(
+    (tab) =>
+      tab.title === backupImageTab.title &&
+      !nativeBackup.tabs.some((source) => source.id === tab.id),
+  );
+  expect(restoredImageTab.preview).toBe('ready');
+  expect(await read('screenshots')).toHaveLength(6);
+  const restoredImage = await manager.evaluate(async (id) => {
+    const database = await new Promise((resolve) => {
+      const open = indexedDB.open('tabs-on-hold');
+      open.onsuccess = () => resolve(open.result);
+    });
+    const image = await new Promise((resolve) => {
+      const request = database.transaction('screenshots').objectStore('screenshots').get(id);
+      request.onsuccess = () => resolve(request.result);
+    });
+    database.close();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(image.blob);
+    });
+  }, restoredImageTab.id);
+  expect(restoredImage).toBe(backupImageData);
+  const importedPreview = manager.locator(
+    `[data-tab-id="${restoredImageTab.id}"] .preview-hit img`,
+  );
+  await importedPreview.scrollIntoViewIfNeeded();
+  await expect.poll(() => importedPreview.evaluate((image) => image.naturalWidth)).toBe(1440);
   await manager.getByRole('button', { name: 'Import sessions', exact: true }).click();
   await upload({
     version: '1.0',
@@ -1171,7 +1301,7 @@ try {
   await manager.evaluate(
     () =>
       new Promise((resolve) => {
-        const open = indexedDB.open('tabs-aside-done-right');
+        const open = indexedDB.open('tabs-on-hold');
         open.onsuccess = () => {
           const database = open.result;
           const tx = database.transaction(['sessions', 'tabs'], 'readwrite');
@@ -1267,7 +1397,7 @@ try {
   expect(keptWindowTabs).toHaveLength(1);
   expect(keptWindowTabs[0]).toMatchObject({ url: 'about:blank', active: true });
   console.log(
-    'Browser smoke passed: charcoal and sage dark palette, header theme toggle beside preferences, theme persistence and popup sync, system theme override, timed success notifications, stale-result hiding, persistent errors, outside-click/Escape/action menu dismissal, real viewport/video capture, pinned exclusion, persistent blobs, mixed-monitor previews, keyboard menu moves, native single/bulk drag moves, bulk destination picker, empty-session cleanup, search, favorites, list view, restore keep/remove, partial restore, sleeping-tab skip/wake, complete deletion, 1,000-tab search and batching, narrow layout.',
+    'Browser smoke passed: charcoal and sage dark palette, header theme toggle beside preferences, theme persistence and popup sync, system theme override, timed success notifications, stale-result hiding, persistent errors, outside-click/Escape/action menu dismissal, real viewport/video capture, pinned exclusion, persistent blobs, mixed-monitor previews, keyboard menu moves, native single/bulk drag moves, bulk destination picker, empty-session cleanup, search, favorites, list view, restore keep/remove, partial restore, sleeping-tab skip/wake, Base64 screenshot backup download/import and visible restored previews, complete deletion, 1,000-tab search and batching, narrow layout.',
   );
   console.log(`Screenshot sizes: ${imageInfo.map((image) => image.bytes + ' B').join(', ')}`);
 } finally {

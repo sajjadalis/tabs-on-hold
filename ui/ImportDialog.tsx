@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { db } from '../lib/db';
-import { inspectImport, importSessions, MAX_IMPORT_BYTES, type ImportPlan } from '../lib/imports';
+import {
+  inspectImport,
+  importSessions,
+  MAX_IMPORT_BYTES,
+  IMPORT_SIZE_MESSAGE,
+  type ImportPlan,
+} from '../lib/imports';
 import { Dialog } from './shared';
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
@@ -20,6 +26,10 @@ export function ImportDialog({
   const [error, setError] = useState('');
   const chosen = plan?.sessions.filter((s) => selected.has(s.key)) ?? [];
   const count = chosen.reduce((sum, session) => sum + session.tabs.length, 0);
+  const screenshotCount = chosen.reduce(
+    (sum, session) => sum + session.tabs.filter((tab) => tab.screenshot).length,
+    0,
+  );
   const eligible =
     plan?.sessions.filter((s) => s.tabs.length && (repeat || !previous.includes(s.key))) ?? [];
   const close = () => {
@@ -33,7 +43,7 @@ export function ImportDialog({
     setSelected(new Set());
     setPrevious([]);
     try {
-      if (file.size > MAX_IMPORT_BYTES) throw new Error('Choose a JSON backup smaller than 25 MB.');
+      if (file.size > MAX_IMPORT_BYTES) throw new Error(IMPORT_SIZE_MESSAGE);
       const result = await inspectImport(await file.text());
       const imported = (await db.imports.get(result.fingerprint))?.sessionKeys ?? [];
       setPrevious(imported);
@@ -83,7 +93,7 @@ export function ImportDialog({
               if (file) void read(file);
             }}
           />
-          <small>Tabs on Hold, Tabs Aside, or Tab Session Manager · Up to 25 MB</small>
+          <small>Tabs on Hold, Tabs Aside, or Tab Session Manager · Up to 256 MB</small>
         </label>
         {busy && <p role="status">{plan ? 'Importing sessions…' : 'Reading backup…'}</p>}
         {plan && (
@@ -93,8 +103,9 @@ export function ImportDialog({
               {plan.sessions.reduce((n, s) => n + s.tabs.length, 0)} supported tabs
             </p>
             <p className="import-explanation">
-              Tabs are imported without screenshots. Restore a session, then set it aside with
-              preview capture enabled to take screenshots.
+              {screenshotCount
+                ? `${plural(screenshotCount, 'screenshot')} will be restored with the selected tabs.`
+                : 'This selection has no screenshot previews.'}
             </p>
             {plan.warnings.length > 0 && (
               <ul className="import-warnings">

@@ -5,8 +5,7 @@ export default defineConfig({
   manifest: {
     name: 'Tabs on Hold',
     short_name: 'Tabs on Hold',
-    description:
-      'Save tabs for later with screenshot previews, organized sessions, and easy restore. Stored privately on your device.',
+    description: 'Save and organize tabs with screenshot previews and easy restore.',
     minimum_chrome_version: '116',
     permissions: ['tabs', 'tabGroups', 'storage', 'unlimitedStorage', 'alarms', 'favicon'],
     optional_host_permissions: ['<all_urls>'],

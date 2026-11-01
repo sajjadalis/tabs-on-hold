@@ -1,6 +1,6 @@
 {
   "name": "tabs-on-hold",
-  "description": "Save tabs for later with screenshot previews, organized sessions, and easy restore. Stored privately on your device.",
+  "description": "Save and organize tabs with screenshot previews and easy restore.",
   "version": "0.1.6",
   "private": true,
   "type": "module",

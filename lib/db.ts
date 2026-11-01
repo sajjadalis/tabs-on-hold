@@ -15,8 +15,7 @@ export class AsideDatabase extends Dexie {
   jobs!: Table<Job, string>;
   imports!: Table<ImportReceipt, string>;
 
-  // Keep the original storage name so the rename preserves existing libraries.
-  constructor(name = 'tabs-aside-done-right') {
+  constructor(name = 'tabs-on-hold') {
     super(name);
     this.version(1).stores({
       sessions: 'id, createdAt',

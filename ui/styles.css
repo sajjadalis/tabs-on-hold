@@ -404,10 +404,6 @@ nav button.active span {
   margin-left: 12px;
   max-width: 760px;
 }
-.header-settings {
-  width: 36px;
-  height: 36px;
-}
 .header-actions {
   display: flex;
   align-items: center;
@@ -415,6 +411,7 @@ nav button.active span {
   margin-left: auto;
   flex-shrink: 0;
 }
+.header-settings,
 .theme-toggle {
   width: 36px;
   height: 36px;
@@ -1543,6 +1540,7 @@ kbd {
 .main-footer {
   margin-top: auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 15px;
@@ -1556,7 +1554,8 @@ kbd {
   gap: 5px;
 }
 .main-footer .text-button {
-  font-size: 12px;
+  margin-left: auto;
+  font-size: inherit;
 }
 .browser-preview-note {
   background: var(--green-soft);
@@ -2153,9 +2152,6 @@ kbd {
   .tab-grid {
     grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
     gap: 13px;
-  }
-  .main-footer .text-button {
-    display: none;
   }
   .brand strong {
     font-size: 20px;

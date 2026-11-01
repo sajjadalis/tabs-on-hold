@@ -1,0 +1,40 @@
+/* Foldergram's homepage color cycle, scoped to the homepage. */
+@property --home-hue {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 145;
+}
+
+@keyframes rainbow {
+  from {
+    --home-hue: 145;
+  }
+  to {
+    --home-hue: 505;
+  }
+}
+
+html.rainbow {
+  animation: rainbow 40s linear -14s infinite;
+  --vp-c-brand-1: hsl(var(--home-hue) 65% 30%);
+  --vp-c-brand-2: hsl(var(--home-hue) 65% 26%);
+  --vp-c-brand-3: hsl(var(--home-hue) 65% 30%);
+  --vp-c-brand-soft: hsl(var(--home-hue) 65% 45% / 0.12);
+  --home-color-next: hsl(calc(var(--home-hue) + 65) 65% 35%);
+  --home-glow: hsl(var(--home-hue) 80% 65% / 0.3);
+  --home-glow-next: hsl(calc(var(--home-hue) + 65) 80% 65% / 0.24);
+}
+
+html.rainbow.dark {
+  --vp-c-brand-1: hsl(var(--home-hue) 65% 72%);
+  --vp-c-brand-2: hsl(var(--home-hue) 65% 80%);
+  --vp-c-brand-3: hsl(var(--home-hue) 65% 66%);
+  --vp-c-brand-soft: hsl(var(--home-hue) 65% 65% / 0.14);
+  --home-color-next: hsl(calc(var(--home-hue) + 65) 65% 76%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.rainbow {
+    animation: none;
+  }
+}

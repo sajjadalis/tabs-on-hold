@@ -54,6 +54,9 @@ try {
   const manager = await context.newPage();
   await manager.goto(`chrome-extension://${extensionId}/manager.html`);
   await expect(manager.getByRole('heading', { name: 'Your sessions.' })).toBeVisible();
+  await expect(
+    manager.getByRole('button', { name: 'Export a backup', exact: true }),
+  ).toBeDisabled();
   await manager.screenshot({ path: 'artifacts/manager-empty.png', fullPage: true });
   await manager.getByRole('button', { name: 'Privacy & how it works', exact: true }).click();
   await expect(manager.getByRole('dialog')).toContainText(
@@ -167,6 +170,9 @@ try {
   await popup.locator('.popup-shell').screenshot({ path: 'artifacts/popup.png' });
   await popup.getByRole('button', { name: 'Set 3 tabs aside', exact: true }).click();
   await expect.poll(async () => (await read('jobs'))[0]?.status).toBe('running');
+  await expect(
+    manager.getByRole('button', { name: 'Export a backup', exact: true }),
+  ).toBeDisabled();
   await popup.close(); // Closing the UI must not cancel an acknowledged background job.
   const captureJob = await waitDone();
   expect(captureJob.failed).toBe(0);
@@ -1196,13 +1202,26 @@ try {
     },
     { tabIds: backupImageTabs.map((tab) => tab.id), data: backupImageData },
   );
+  const beforeSidebarBackup = await Promise.all(
+    ['sessions', 'tabs', 'screenshots', 'imports'].map(read),
+  );
+  const sidebarDownload = manager.waitForEvent('download');
+  await manager.getByRole('button', { name: 'Export a backup', exact: true }).click();
+  const sidebarBackup = JSON.parse(readFileSync(await (await sidebarDownload).path(), 'utf8'));
+  expect(await Promise.all(['sessions', 'tabs', 'screenshots', 'imports'].map(read))).toEqual(
+    beforeSidebarBackup,
+  );
   await manager.getByRole('button', { name: 'Settings', exact: true }).click();
   const downloaded = manager.waitForEvent('download');
-  await manager.getByRole('button', { name: 'Export a backup', exact: false }).click();
+  await manager
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Export a backup', exact: false })
+    .click();
   const nativeBackup = JSON.parse(readFileSync(await (await downloaded).path(), 'utf8'));
   expect(nativeBackup.format).toBe('tabs-on-hold');
   expect(nativeBackup.version).toBe(2);
   expect(nativeBackup.includesScreenshots).toBe(true);
+  expect({ ...sidebarBackup, exportedAt: nativeBackup.exportedAt }).toEqual(nativeBackup);
   for (const image of backupImages)
     expect(nativeBackup.tabs.find((tab) => tab.id === image.tabId).screenshot).toEqual(
       image.screenshot,
@@ -1390,6 +1409,17 @@ try {
   expect(await read('tabs')).toHaveLength(0);
   expect(await read('screenshots')).toHaveLength(0);
   expect(errors).toEqual([]);
+  await expect(
+    manager.getByRole('button', { name: 'Export a backup', exact: true }),
+  ).toBeDisabled();
+  await manager
+    .locator('.main-footer')
+    .getByRole('button', { name: 'Privacy & how it works', exact: true })
+    .click();
+  await expect(manager.getByRole('dialog')).toContainText(
+    'Your saved tabs and screenshots are stored on your computer and are not uploaded.',
+  );
+  await manager.getByRole('button', { name: 'Got it', exact: true }).click();
   const keptWindowTabs = await worker.evaluate(
     (id) => chrome.tabs.query({ windowId: id }),
     captureWindow,

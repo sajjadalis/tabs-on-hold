@@ -17,8 +17,11 @@
     "dev": "wxt",
     "build": "wxt build",
     "zip": "wxt zip",
+    "docs:dev": "vitepress dev docs --host 127.0.0.1 --port 4175",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs --port 4176",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write lib ui entrypoints tests scripts wxt.config.ts vitest.config.ts tsconfig.json package.json README.md",
+    "format": "prettier --write lib ui entrypoints tests scripts docs wxt.config.ts vitest.config.ts tsconfig.json package.json README.md",
     "test": "vitest run",
     "test:browser": "node scripts/smoke.mjs",
     "postinstall": "wxt prepare"
@@ -39,6 +42,7 @@
     "fake-indexeddb": "^6.2.4",
     "prettier": "^3.9.10",
     "typescript": "^5.9.3",
+    "vitepress": "^1.6.4",
     "vitest": "^4.0.0",
     "wxt": "^0.20.11"
   }

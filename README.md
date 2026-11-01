@@ -2,6 +2,8 @@
 
 Save and organize tabs with screenshot previews and easy restore.
 
+![Tabs on Hold: saved sessions, screenshot previews, and light and dark appearance](docs/public/images/tabs-on-hold-promo.png)
+
 ## Features
 
 - Save the current tab, selected tabs, a window, or all regular windows.
@@ -42,7 +44,7 @@ Saving closes tabs after their data is saved. Failed captures leave the source t
 
 ## Backups
 
-Use **Settings → Export a backup** to download one JSON file containing your sessions, saved tabs, and available screenshots.
+Choose **Export a backup** in the saved library sidebar to download one JSON file containing your sessions, saved tabs, and available screenshots. You can also use **Settings → Export a backup**.
 
 Choose **Import sessions** to restore a backup. Select the sessions to add; their screenshot previews appear without reopening websites. Imports add to the current library and flag sessions already imported from the same file.
 
@@ -76,6 +78,12 @@ Change browser shortcuts at `chrome://extensions/shortcuts`.
 ## Development
 
 Built with React, TypeScript, WXT, and Dexie. See [Development](docs/development.md) for setup, tests, and packaging.
+
+The documentation website includes a [getting started guide](docs/guide.md), [backup instructions](docs/backups.md), [privacy policy](docs/privacy.md), and [help](docs/support.md). See [website development](docs/development.md#documentation-website) to preview or build it locally.
+
+## Contributing
+
+Contributions are welcome. See [Contributing](CONTRIBUTING.md) for bug reports, feature suggestions, and pull request guidelines.
 
 ## License
 

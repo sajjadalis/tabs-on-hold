@@ -1,4 +1,4 @@
-# Privacy
+# Privacy & permissions
 
 This page explains what Tabs on Hold stores and how that data is used.
 
@@ -33,3 +33,13 @@ Deleting saved tabs also deletes their screenshot previews. **Delete previews, k
 When **Remove after restoring** is enabled, successfully restored tabs and their previews are deleted from the saved library. Failed restores remain saved.
 
 Uninstalling removes local extension data. Exported backup files remain wherever you saved them.
+
+## Documentation website
+
+The documentation website is configured for GitHub Pages hosting. When you visit a GitHub Pages site, GitHub logs your IP address for security purposes. See [GitHub’s privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) for details.
+
+The website does not access your extension’s saved tabs or screenshots. It does not include analytics or advertising scripts.
+
+## Questions
+
+For questions about this policy, [open an issue on GitHub](https://github.com/sajjadalis/tabs-on-hold/issues). Do not include private URLs, screenshots, or backup files in public issues.

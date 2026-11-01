@@ -6,3 +6,4 @@ temp/
 artifacts/
 test-results/
 _data/
+docs/.vitepress/.temp/

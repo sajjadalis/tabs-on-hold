@@ -5,3 +5,4 @@ node_modules/
 temp/
 artifacts/
 package-lock.json
+docs/.vitepress/.temp/

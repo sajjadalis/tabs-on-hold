@@ -65,3 +65,27 @@ The release version comes from `package.json`. The interface and generated manif
 | `scripts/`     | Browser tests and icon generation                          |
 
 Run `npm run format` to format source files. Regenerate toolbar icons with `node scripts/icons.mjs`.
+
+## Documentation website
+
+The VitePress site lives in `docs/`. Install its dependencies with the same root `npm ci` command used for the extension.
+
+```sh
+npm run docs:dev
+npm run docs:build
+npm run docs:preview
+```
+
+Development uses `http://127.0.0.1:4175/tabs-on-hold/`; production preview uses `http://localhost:4176/tabs-on-hold/`. The production build is written to `.output/docs` and its cache to `.cache/vitepress`. The build checks internal Markdown links.
+
+The homepage uses a 40-second rainbow accent cycle inspired by Foldergram. Documentation pages keep the sage accent. The animation stops when the browser requests reduced motion. Website version labels use `lib/version.ts`, which reads `package.json`.
+
+### GitHub Pages
+
+The `Documentation` workflow builds documentation on pull requests and deploys pushes to `main` or manual runs. In the repository’s **Settings → Pages**, select **GitHub Actions** as the build source before the first deployment.
+
+The site uses `/tabs-on-hold/` as its base path. After deployment, its homepage is `https://sajjadalis.github.io/tabs-on-hold/` and its privacy page is `https://sajjadalis.github.io/tabs-on-hold/privacy`. Use the deployed privacy URL in the Chrome Web Store dashboard.
+
+The homepage and README share `docs/public/images/tabs-on-hold-promo.png`. Keep public images free of personal tabs and data. Website assets belong under `docs/public/` so they are not bundled with the extension.
+
+The illustrated guide uses release screenshots from `docs/public/screenshots/`, captured with real public websites in an isolated browser profile. Use screenshots only beside the workflows they demonstrate.

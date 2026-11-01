@@ -595,13 +595,18 @@ export function Manager() {
             <FolderInput size={17} />
             Import sessions
           </button>
+          <button
+            className="sidebar-action"
+            disabled={Boolean(busy) || !tabs.length}
+            onClick={() => void run(exportLibrary)}
+            title="Export a backup"
+          >
+            <Download size={17} />
+            Export a backup
+          </button>
           <button className="sidebar-action" onClick={() => setSettingsOpen(true)}>
             <Settings2 size={17} />
             Settings
-          </button>
-          <button className="sidebar-action" onClick={() => setHelpOpen(true)}>
-            <ShieldCheck size={17} />
-            Privacy & how it works
           </button>
           <div className="sidebar-version">
             <span>Made for a little less clutter.</span>
@@ -655,11 +660,12 @@ export function Manager() {
               {resolvedTheme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
             </button>
             <button
-              className="icon-button header-settings"
+              className="secondary-button header-settings"
               aria-label="Open settings"
+              title="Open settings"
               onClick={() => setSettingsOpen(true)}
             >
-              <Settings2 size={20} />
+              <Settings2 size={19} />
             </button>
           </div>
         </header>
@@ -1106,8 +1112,8 @@ export function Manager() {
             Saved sessions, ready when you need them.
           </span>
           <button className="text-button" onClick={() => setHelpOpen(true)}>
-            Help & privacy
-            <ArrowUpRight size={12} />
+            <ShieldCheck size={13} />
+            Privacy & how it works
           </button>
         </footer>
       </main>
@@ -1590,8 +1596,8 @@ export function Manager() {
             <p>
               <Download size={18} />
               <span>
-                <strong>Backups.</strong> Export saved tabs and screenshots from Settings. Keep a
-                backup before uninstalling.
+                <strong>Backups.</strong> Export saved tabs and screenshots from the sidebar or
+                Settings. Keep a backup before uninstalling.
               </span>
             </p>
             <p>

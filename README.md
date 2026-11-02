@@ -1,8 +1,22 @@
+<div align="center">
+
+<a href="https://chromewebstore.google.com/detail/tabs-on-hold/gaefdclihmlpcnnabebiaonmepdhfapb">
+  <img src="docs/public/images/tabs-on-hold-promo.png" alt="Tabs on Hold: saved sessions, screenshot previews, and light and dark appearance" />
+</a>
+
 # Tabs on Hold
 
 Save and organize tabs with screenshot previews and easy restore.
 
-![Tabs on Hold: saved sessions, screenshot previews, and light and dark appearance](docs/public/images/tabs-on-hold-promo.png)
+[![Add to Chrome](https://img.shields.io/badge/Chrome_Web_Store-Add_to_Chrome-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/tabs-on-hold/gaefdclihmlpcnnabebiaonmepdhfapb)
+[![Documentation](https://img.shields.io/badge/Docs-Tabs_on_Hold-486b3d?style=flat-square)](https://tabsonhold.intentdeep.com/)
+[![Node.js 22.12 or later](https://img.shields.io/badge/Node.js-22.12%2B-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](docs/development.md)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
+
+[Install extension](https://chromewebstore.google.com/detail/tabs-on-hold/gaefdclihmlpcnnabebiaonmepdhfapb) · [Documentation](https://tabsonhold.intentdeep.com/) · [Features](#features) · [Get started](docs/guide.md) · [Backups](docs/backups.md) · [Contributing](CONTRIBUTING.md)
+
+</div>
 
 ## Features
 
@@ -15,7 +29,11 @@ Save and organize tabs with screenshot previews and easy restore.
 - Import sessions from Tabs Aside and Tab Session Manager.
 - Choose light, dark, or system appearance.
 
-## Install from source
+## Install
+
+Install [Tabs on Hold from the Chrome Web Store](https://chromewebstore.google.com/detail/tabs-on-hold/gaefdclihmlpcnnabebiaonmepdhfapb), then pin it from Chrome's **Extensions** menu. Requires Chrome 116 or later.
+
+### Install from source
 
 Requires Chrome 116 or later and Node.js 22.12 or later.
 

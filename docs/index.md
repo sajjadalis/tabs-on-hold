@@ -12,7 +12,7 @@ hero:
   actions:
     - theme: brand
       text: Add to Chrome
-      link: '#'
+      link: https://chromewebstore.google.com/detail/tabs-on-hold/gaefdclihmlpcnnabebiaonmepdhfapb
     - theme: alt
       text: Get started
       link: /guide

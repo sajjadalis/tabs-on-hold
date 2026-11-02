@@ -4,7 +4,7 @@ Tabs on Hold saves tabs into sessions, with screenshot previews to help you find
 
 Select a screenshot in this guide to view it full size.
 
-Install Tabs on Hold from the [Chrome Web Store](#).
+Install Tabs on Hold from the [Chrome Web Store](https://chromewebstore.google.com/detail/tabs-on-hold/gaefdclihmlpcnnabebiaonmepdhfapb).
 
 ## Pin the extension
 

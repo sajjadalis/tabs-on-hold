@@ -31,6 +31,10 @@ export default defineConfig({
       { text: 'Backups', link: '/backups' },
       { text: 'Privacy', link: '/privacy' },
       { text: 'Support', link: '/support' },
+      {
+        text: 'Add to Chrome',
+        link: 'https://chromewebstore.google.com/detail/tabs-on-hold/gaefdclihmlpcnnabebiaonmepdhfapb',
+      },
     ],
     sidebar: [
       {
